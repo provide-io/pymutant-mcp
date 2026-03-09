@@ -380,12 +380,19 @@ def test_requires_mcp_dependency_test_read_error(monkeypatch, tmp_path: Path) ->
 
 
 def test_dependency_preflight_pass(monkeypatch, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
     class Dummy:
         returncode = 0
 
-    monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: Dummy())
+    def _run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        calls.append(cmd)
+        return Dummy()
+
+    monkeypatch.setattr(runner.subprocess, "run", _run)
     err = runner._dependency_preflight(tmp_path, ["/venv/python", "-m", "mutmut"])
     assert err is None
+    assert calls == [["/venv/python", "-c", "import mutmut"]]
 
 
 def test_dependency_preflight_fail(monkeypatch, tmp_path: Path) -> None:
@@ -396,10 +403,39 @@ def test_dependency_preflight_fail(monkeypatch, tmp_path: Path) -> None:
     class Dummy:
         returncode = 1
 
-    monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: Dummy())
+    calls: list[list[str]] = []
+
+    def _run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        calls.append(cmd)
+        return Dummy()
+
+    monkeypatch.setattr(runner.subprocess, "run", _run)
     err = runner._dependency_preflight(tmp_path, ["/venv/python", "-m", "mutmut"])
     assert err is not None
     assert "uv sync" in err
+    assert calls and calls[0] == ["/venv/python", "-c", "import mutmut"]
+
+
+def test_dependency_preflight_includes_mcp_when_required(monkeypatch, tmp_path: Path) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_x.py").write_text("from pymutant import main")
+    seen: list[list[str]] = []
+
+    class Dummy:
+        def __init__(self, returncode: int):
+            self.returncode = returncode
+
+    def _run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        seen.append(cmd)
+        return Dummy(0)
+
+    monkeypatch.setattr(runner.subprocess, "run", _run)
+    assert runner._dependency_preflight(tmp_path, ["/venv/python", "-m", "mutmut"]) is None
+    assert seen == [
+        ["/venv/python", "-c", "import mutmut"],
+        ["/venv/python", "-c", "import mcp"],
+    ]
 
 
 def test_dependency_preflight_non_module_cmd(tmp_path: Path) -> None:

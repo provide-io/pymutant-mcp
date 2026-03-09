@@ -13,7 +13,7 @@ import pytest
 
 
 def _run(data: Path, schema: Path) -> subprocess.CompletedProcess[str]:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     return subprocess.run(
         [
             sys.executable,
@@ -52,7 +52,7 @@ def test_validate_schema_failure(tmp_path: Path) -> None:
 def test_validate_repo_schemas_script() -> None:
     if os.environ.get("MUTANT_UNDER_TEST"):
         pytest.skip("schema script integration test requires repository scripts path")
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         [sys.executable, "scripts/validate_repo_schemas.py"],
         check=False,

@@ -28,11 +28,14 @@ def test_load_ledger_bad_json(tmp_path: Path) -> None:
 
 def test_load_ledger_filters_invalid_events(tmp_path: Path) -> None:
     (tmp_path / ledger.LEDGER_FILE).write_text(
-        '{"events":[1, {"timestamp":"t","context":"c","mutants":{"a":"killed","b":1}}, {"timestamp":"x","mutants":{}}]}'
+        '{"events":[1, {"timestamp":"t","context":"c","mutants":{"a":"killed","b":1}}, {"mutants":{}}]}'
     )
     out = ledger.load_ledger(tmp_path)
     assert len(out["events"]) == 2
     assert out["events"][0]["mutants"] == {"a": "killed"}
+    assert out["events"][0]["timestamp"] == "t"
+    assert out["events"][1]["timestamp"] == ""
+    assert out["events"][1]["context"] == "unknown"
 
 
 def test_load_ledger_non_dict_root(tmp_path: Path) -> None:
@@ -48,6 +51,14 @@ def test_load_ledger_non_list_events(tmp_path: Path) -> None:
 def test_load_ledger_skips_event_with_non_dict_mutants(tmp_path: Path) -> None:
     (tmp_path / ledger.LEDGER_FILE).write_text('{"events":[{"mutants":[]}] }')
     assert ledger.load_ledger(tmp_path) == {"events": []}
+
+
+def test_load_ledger_continues_after_invalid_event(tmp_path: Path) -> None:
+    (tmp_path / ledger.LEDGER_FILE).write_text(
+        '{"events":[{"mutants":[]}, {"timestamp":"ok","context":"ctx","mutants":{"m":"killed"}}]}'
+    )
+    out = ledger.load_ledger(tmp_path)
+    assert out["events"] == [{"timestamp": "ok", "context": "ctx", "mutants": {"m": "killed"}}]
 
 
 def test_append_ledger_event_ignores_empty(tmp_path: Path) -> None:
@@ -86,9 +97,11 @@ def test_resolve_latest_statuses_prefers_terminal_and_keeps_previous(tmp_path: P
 def test_ledger_status_and_reset(tmp_path: Path) -> None:
     before = ledger.ledger_status(tmp_path)
     assert before["exists"] is False
+    assert before["path"] == str(tmp_path / ledger.LEDGER_FILE)
     ledger.append_ledger_event({"m1": "killed"}, context="x", project_root=tmp_path)
     after = ledger.ledger_status(tmp_path)
     assert after["exists"] is True
+    assert after["path"] == str(tmp_path / ledger.LEDGER_FILE)
     assert after["events"] == 1
     assert after["counts"]["killed"] == 1
     assert ledger.reset_ledger(tmp_path) is True
