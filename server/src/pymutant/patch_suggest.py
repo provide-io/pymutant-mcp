@@ -30,11 +30,11 @@ def suggest_pytest_patch(
     fn = mutant_name.replace(".", "_").replace("__", "_").replace("-", "_")
     test_fn = f"test_kill_{fn}".replace("__", "_")
     snippet = (
-        "import pytest\n\n"
         f"def {test_fn}() -> None:\n"
         f"    \"\"\"Auto-generated suggestion for {mutant_name}.\"\"\"\n"
-        "    # TODO: replace with real assertion from mutant diff evidence\n"
-        f"    assert {repr(diff[:80])} is not None\n"
+        "    # Replace this with a behavior assertion that kills the mutant.\n"
+        f"    mutant_diff_excerpt = {diff[:80]!r}\n"
+        "    assert mutant_diff_excerpt != \"\"\n"
     )
     patch = f"# target: {target}\n\n{snippet}"
 
