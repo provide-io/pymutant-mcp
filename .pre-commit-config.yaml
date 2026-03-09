@@ -1,0 +1,51 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.2
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy strict
+        entry: mypy server/src src/repo_verify
+        language: python
+        language_version: python3.11
+        additional_dependencies:
+          - mypy==1.19.1
+          - mcp[cli]>=1.0.0
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: ty
+        name: ty check
+        entry: ty check server/src src/repo_verify
+        language: python
+        language_version: python3.11
+        additional_dependencies:
+          - ty==0.0.19
+          - mcp[cli]>=1.0.0
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: bandit
+        name: bandit
+        entry: bandit -r server/src src/repo_verify -ll
+        language: python
+        language_version: python3.11
+        additional_dependencies:
+          - bandit==1.9.4
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: verify
+        name: verify
+        entry: uv run verify
+        language: system
+        pass_filenames: false
+        always_run: true

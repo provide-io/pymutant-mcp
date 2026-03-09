@@ -1,0 +1,67 @@
+[project]
+name = "pymutant-dev"
+dynamic = ["version"]
+description = "Dev tooling for the pymutant plugin"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "provide.io llc" }]
+dependencies = [
+    "bandit>=1.8.6",
+    "hypothesis>=6.140.3",
+    "mcp[cli]>=1.0.0",
+    "mypy>=1.18.2",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.13.1",
+]
+
+[project.scripts]
+verify = "repo_verify.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/repo_verify"]
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = "^(?P<version>.+)$"
+
+[tool.uv.workspace]
+members = ["server"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=server/src/pymutant --cov=src/repo_verify --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+branch = true
+source = ["server/src/pymutant", "src/repo_verify"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = false
+
+[tool.mutmut]
+paths_to_mutate = ["src/pymutant/", "src/repo_verify/"]
+tests_dir = ["tests/"]
+also_copy = ["conftest.py"]
+pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
+
+[dependency-groups]
+dev = [
+    "mutmut>=3.5.0",
+]

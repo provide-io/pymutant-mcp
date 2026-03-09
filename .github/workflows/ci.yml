@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python
+        run: uv python install 3.11
+
+      - name: Bandit report
+        run: uv run bandit -r server/src/pymutant src/repo_verify -f json -o bandit-report.json -ll
+
+      - name: Upload Bandit artifact
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+      - name: Verify
+        run: uv run verify
+
+  mutation_smoke:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python
+        run: uv python install 3.11
+
+      - name: Mutation smoke (strict campaign)
+        env:
+          PYMUTANT_BATCH_SIZE: "5"
+        run: |
+          rm -f .pymutant-strict-campaign.json .pymutant-ledger.json
+          cat > .pymutant-strict-campaign.json <<'JSON'
+          {
+            "names": ["pymutant.__ci_smoke__mutmut_0"],
+            "stale": [],
+            "attempted": []
+          }
+          JSON
+          uv run python - <<'PY'
+          from pymutant.main import pymutant_run, pymutant_ledger_status
+
+          out = pymutant_run(max_children=1, strict_campaign=True)
+          assert out["returncode"] == 0, out
+          assert out["strict_campaign"] is True, out
+          assert out["batch_size"] >= 1, out
+          assert out["campaign_stale"] >= 1, out
+
+          status = pymutant_ledger_status()
+          assert status["ledger"]["exists"] is True, status
+          assert status["campaign"]["exists"] is True, status
+          PY
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [verify, mutation_smoke]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python
+        run: uv python install 3.11
+
+      - name: Build root package
+        run: uv build
+
+      - name: Build server package
+        run: cd server && uv build
+
+      - name: Verify distribution metadata
+        run: uvx --from twine twine check dist/*.whl dist/*.tar.gz
+
+      - name: Generate checksums
+        run: sha256sum dist/* > dist/SHA256SUMS
+
+      - name: Verify checksums
+        run: sha256sum -c dist/SHA256SUMS

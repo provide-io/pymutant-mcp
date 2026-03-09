@@ -1,0 +1,172 @@
+# SPDX-FileCopyrightText: Copyright (c) provide.io llc
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess  # nosec B404
+from pathlib import Path
+from typing import TypeAlias
+
+from .ledger import resolve_latest_statuses
+
+StatusMap: TypeAlias = dict[int | None, str]
+
+# Canonical mutmut 3.5.x exit-code mapping normalized to MCP status names.
+# Source: mutmut.__main__.status_by_exit_code
+EXIT_CODE_STATUS: StatusMap = {
+    1: "killed",
+    3: "killed",
+    0: "survived",
+    5: "no_tests",
+    33: "no_tests",
+    34: "skipped",
+    35: "suspicious",
+    36: "timeout",
+    24: "timeout",
+    152: "timeout",
+    255: "timeout",
+    -24: "timeout",
+    37: "typecheck_failed",
+    2: "interrupted",
+    -11: "segfault",
+    -9: "segfault",
+    None: "not_checked",
+}
+
+
+def _project_root_or_cwd(project_root: Path | None) -> Path:
+    return project_root if project_root is not None else Path(os.getcwd())
+
+
+def _meta_dir(project_root: Path) -> Path:
+    return project_root / "mutants"
+
+
+def load_all_meta_files(project_root: Path | None = None) -> dict[str, dict]:
+    """Load all .meta files from the mutants/ directory."""
+    root = _project_root_or_cwd(project_root)
+    meta_dir = _meta_dir(root)
+    results: dict[str, dict] = {}
+    if not meta_dir.exists():
+        return results
+    for meta_file in meta_dir.rglob("*.meta"):
+        try:
+            data = json.loads(meta_file.read_text())
+            results[str(meta_file.relative_to(root))] = data
+        except (json.JSONDecodeError, OSError):
+            pass
+    return results
+
+
+def _key_to_source_file(key: str) -> str:
+    """Derive source file path from mutant key like 'src.module.func__mutmut_1'."""
+    name_part = key.split("__mutmut_")[0]
+    # Strip trailing function/class name — last segment after last dot is the func
+    # Key is dot-separated module path + function: src.foo.bar.my_func
+    # We want src/foo/bar.py — so we drop the last segment
+    parts = name_part.rsplit(".", 1)
+    module_path = parts[0] if len(parts) > 1 else name_part
+    return module_path.replace(".", "/") + ".py"
+
+
+def get_results(
+    include_killed: bool = False,
+    file_filter: str | None = None,
+    use_ledger: bool = True,
+    project_root: Path | None = None,
+) -> dict:
+    """Return structured mutation results from all .meta files."""
+    root = _project_root_or_cwd(project_root)
+    meta_files = load_all_meta_files(root)
+
+    all_mutants: list[dict] = []
+    counts: dict[str, int] = {status: 0 for status in set(EXIT_CODE_STATUS.values()) | {"stale"}}
+    status_by_key: dict[str, str] = {}
+    duration_by_key: dict[str, float | None] = {}
+    meta_path_by_key: dict[str, str] = {}
+
+    for meta_path, meta_data in meta_files.items():
+        exit_codes: dict[str, int | None] = meta_data.get("exit_code_by_key", {})
+        durations: dict[str, float] = meta_data.get("durations_by_key", {})
+
+        for key, exit_code in exit_codes.items():
+            status_by_key[key] = EXIT_CODE_STATUS.get(exit_code, "suspicious")
+            duration_by_key[key] = durations.get(key)
+            meta_path_by_key[key] = meta_path
+
+    if use_ledger:
+        for key, status in resolve_latest_statuses(root).items():
+            status_by_key[key] = status
+
+    for key in sorted(status_by_key.keys()):
+        status = status_by_key[key]
+        counts[status] = counts.get(status, 0) + 1
+
+        if not include_killed and status == "killed":
+            continue
+
+        source_file = _key_to_source_file(key)
+        if file_filter and file_filter not in source_file:
+            continue
+
+        all_mutants.append(
+            {
+                "name": key,
+                "status": status,
+                "source_file": source_file,
+                "meta_path": meta_path_by_key.get(key),
+                "duration": duration_by_key.get(key),
+            }
+        )
+
+    return {
+        "mutants": all_mutants,
+        "counts": counts,
+        "total": sum(counts.values()),
+    }
+
+
+def get_mutant_diff(mutant_name: str, project_root: Path | None = None) -> str:
+    """Return unified diff for a single mutant via `mutmut show <name>`."""
+    root = _project_root_or_cwd(project_root)
+    try:
+        result = subprocess.run(  # noqa: S603,S607  # nosec
+            ["mutmut", "show", mutant_name],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return "ERROR: mutmut show timed out after 30 seconds"
+    except FileNotFoundError:
+        return "ERROR: mutmut not found — install it in the target project with `uv add mutmut --dev`"
+
+    output = result.stdout or result.stderr
+    if result.returncode != 0:
+        return f"ERROR: mutmut show failed for {mutant_name}: {output.strip()}"
+    return output
+
+
+def get_surviving_mutants(
+    file_filter: str | None = None,
+    project_root: Path | None = None,
+) -> list[dict]:
+    """Return surviving mutants with diffs, grouped by source file."""
+    root = _project_root_or_cwd(project_root)
+    data = get_results(include_killed=False, file_filter=file_filter, project_root=root)
+    survivors = [m for m in data["mutants"] if m["status"] == "survived"]
+
+    for mutant in survivors:
+        diff = get_mutant_diff(mutant["name"], root)
+        mutant["diff"] = diff
+        mutant["diff_error"] = diff.startswith("ERROR:")
+
+    grouped: dict[str, list[dict]] = {}
+    for mutant in survivors:
+        source_file = mutant["source_file"]
+        grouped.setdefault(source_file, []).append(mutant)
+
+    return [{"source_file": f, "mutants": ms} for f, ms in grouped.items()]
