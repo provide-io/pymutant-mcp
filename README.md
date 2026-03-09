@@ -66,6 +66,7 @@ The `pymutant` server exposes these tools to Claude:
 | `pymutant_trend_report` | Mutation drift/regression summary from score history |
 | `pymutant_suggest_pytest_patch` | Generate pytest patch suggestion (optional `apply=true`) |
 | `pymutant_render_report` | Generate HTML report bundle under `dist/` |
+| `pymutant_set_project_root` | Set process-local project root at runtime for this MCP process |
 
 All tools return the same response envelope:
 

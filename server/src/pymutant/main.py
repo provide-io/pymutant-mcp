@@ -27,15 +27,19 @@ from .setup import check_setup, detect_layout
 from .trends import trend_report
 
 mcp = FastMCP("pymutant")
+_PROJECT_ROOT_OVERRIDE: Path | None = None
 
 
 def _root() -> Path:
     """Return the project root.
 
     Resolution order:
-    1. PYMUTANT_PROJECT_ROOT env var
-    2. os.getcwd()
+    1. runtime override set via pymutant_set_project_root
+    2. PYMUTANT_PROJECT_ROOT env var
+    3. os.getcwd()
     """
+    if _PROJECT_ROOT_OVERRIDE is not None:
+        return _PROJECT_ROOT_OVERRIDE
     env_root = os.environ.get("PYMUTANT_PROJECT_ROOT")
     if env_root:
         return Path(env_root)
@@ -61,6 +65,35 @@ def _error_from_result(result: dict[str, Any]) -> dict[str, Any]:
             "summary": result.get("summary"),
         },
     }
+
+
+@mcp.tool()
+def pymutant_set_project_root(path: str) -> dict:
+    """Set process-local project root for subsequent tool calls in this MCP process."""
+    global _PROJECT_ROOT_OVERRIDE
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = (Path.cwd() / candidate).resolve()
+    if not candidate.exists() or not candidate.is_dir():
+        return _response(
+            {
+                "path": path,
+                "resolved_path": str(candidate),
+                "active_project_root": str(_root()),
+            },
+            ok=False,
+            error={"type": "invalid_project_root", "message": f"project root does not exist: {candidate}"},
+        )
+    previous = _PROJECT_ROOT_OVERRIDE
+    _PROJECT_ROOT_OVERRIDE = candidate
+    return _response(
+        {
+            "path": path,
+            "resolved_path": str(candidate),
+            "previous_project_root": str(previous) if previous is not None else None,
+            "active_project_root": str(_PROJECT_ROOT_OVERRIDE),
+        }
+    )
 
 
 @mcp.tool()

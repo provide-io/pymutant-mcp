@@ -10,11 +10,13 @@ from pymutant import main
 
 
 def test_root_prefers_env(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
     monkeypatch.setenv("PYMUTANT_PROJECT_ROOT", str(tmp_path))
     assert main._root() == tmp_path
 
 
 def test_root_prefers_cwd_workspace(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
     workspace = tmp_path / "ws"
     workspace.mkdir()
@@ -24,12 +26,14 @@ def test_root_prefers_cwd_workspace(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_root_falls_back_to_cwd(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
     monkeypatch.chdir(tmp_path)
     assert main._root() == tmp_path
 
 
 def test_root_uses_cwd_when_not_workspace(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
     no_project = tmp_path / "no_project"
     no_project.mkdir()
@@ -38,6 +42,7 @@ def test_root_uses_cwd_when_not_workspace(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_root_ignores_legacy_project_root_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
     monkeypatch.chdir(tmp_path)
     assert main._root() == tmp_path
@@ -282,3 +287,42 @@ def test_main_sets_project_root_from_cli_absolute(monkeypatch, tmp_path: Path) -
 
     assert calls == ["run"]
     assert os.environ["PYMUTANT_PROJECT_ROOT"] == str(tmp_path)
+
+
+def test_root_prefers_runtime_override(monkeypatch, tmp_path: Path) -> None:
+    override = tmp_path / "override"
+    override.mkdir()
+    env_root = tmp_path / "env"
+    env_root.mkdir()
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", override)
+    monkeypatch.setenv("PYMUTANT_PROJECT_ROOT", str(env_root))
+    monkeypatch.chdir(tmp_path)
+    assert main._root() == override
+
+
+def test_set_project_root_sets_override(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
+    out = main.pymutant_set_project_root(str(project))
+    assert out["ok"] is True
+    assert out["data"]["resolved_path"] == str(project)
+    assert out["data"]["active_project_root"] == str(project)
+    assert main._PROJECT_ROOT_OVERRIDE == project
+
+
+def test_set_project_root_relative(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
+    out = main.pymutant_set_project_root("project")
+    assert out["ok"] is True
+    assert out["data"]["resolved_path"] == str(project)
+
+
+def test_set_project_root_invalid(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_PROJECT_ROOT_OVERRIDE", None)
+    out = main.pymutant_set_project_root(str(tmp_path / "missing"))
+    assert out["ok"] is False
+    assert out["error"]["type"] == "invalid_project_root"
