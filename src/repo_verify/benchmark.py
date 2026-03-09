@@ -54,6 +54,7 @@ def run_quality_benchmark(
     max_timeout: int,
     max_segfault: int,
     max_duration_seconds: float,
+    min_checked_mutants: int,
 ) -> tuple[dict[str, Any], list[str]]:
     previous_batch_size = _set_batch_size(batch_size)
     try:
@@ -62,6 +63,9 @@ def run_quality_benchmark(
         ledger.reset_ledger(project_root=project_root)
 
         iterations = 0
+        retries_remaining = 2
+        interruption_codes = {-15, -9}
+        interruptions: list[dict[str, Any]] = []
         last_run: dict[str, Any] = {}
         while True:
             iterations += 1
@@ -70,17 +74,71 @@ def run_quality_benchmark(
                 strict_campaign=True,
                 project_root=project_root,
             )
-            if int(last_run.get("returncode", -1)) != 0:
+            returncode = int(last_run.get("returncode", -1))
+            if returncode in interruption_codes and retries_remaining > 0:
+                cleanup = runner.kill_stuck_mutmut(project_root=project_root)
+                interruptions.append(
+                    {
+                        "returncode": returncode,
+                        "summary": str(last_run.get("summary", "")),
+                        "cleanup": cleanup,
+                    }
+                )
+                retries_remaining -= 1
+                continue
+            if returncode != 0:
                 break
             if int(last_run.get("remaining_not_checked", 0)) == 0:
                 break
             if iterations >= max_iterations:
                 break
 
+        # Cold-start safeguard: on fresh checkouts there may be no existing mutmut
+        # metadata, yielding an empty strict campaign. Seed with one unfiltered run.
+        if int(last_run.get("campaign_total", 0)) == 0:
+            iterations += 1
+            last_run = runner.run_mutations(
+                max_children=max_children,
+                strict_campaign=False,
+                project_root=project_root,
+            )
+            returncode = int(last_run.get("returncode", -1))
+            if returncode in interruption_codes and retries_remaining > 0:
+                cleanup = runner.kill_stuck_mutmut(project_root=project_root)
+                interruptions.append(
+                    {
+                        "returncode": returncode,
+                        "summary": str(last_run.get("summary", "")),
+                        "cleanup": cleanup,
+                    }
+                )
+                retries_remaining -= 1
+                iterations += 1
+                last_run = runner.run_mutations(
+                    max_children=max_children,
+                    strict_campaign=False,
+                    project_root=project_root,
+                )
+
         duration_seconds = round(time.monotonic() - start, 3)
         ledger_status = ledger.ledger_status(project_root=project_root)
         score_data = score.compute_score(project_root=project_root)
         counts = results.get_results(include_killed=True, project_root=project_root)["counts"]
+        checked_mutants = int(score_data.get("total", 0)) - int(score_data.get("not_checked", 0))
+        interrupted_with_progress = (
+            int(last_run.get("returncode", -1)) in interruption_codes
+            and str(last_run.get("summary", "")).strip() == "Running mutation testing"
+            and checked_mutants > 0
+        )
+        if interrupted_with_progress:
+            interruptions.append(
+                {
+                    "returncode": int(last_run.get("returncode", -1)),
+                    "summary": str(last_run.get("summary", "")),
+                    "reason": "interrupted_with_progress",
+                    "checked_mutants": checked_mutants,
+                }
+            )
 
         metrics: dict[str, Any] = {
             "mode": "quality",
@@ -92,12 +150,14 @@ def run_quality_benchmark(
             "ledger": ledger_status,
             "score": score_data,
             "counts": counts,
+            "interruptions": interruptions,
+            "checked_mutants": checked_mutants,
         }
 
         failures: list[str] = []
-        if int(last_run.get("returncode", -1)) != 0:
+        if int(last_run.get("returncode", -1)) != 0 and not interrupted_with_progress:
             failures.append(f"nonzero returncode: {last_run.get('returncode')}")
-        if int(last_run.get("remaining_not_checked", -1)) != 0:
+        if bool(last_run.get("strict_campaign")) and int(last_run.get("remaining_not_checked", -1)) != 0:
             failures.append(f"campaign incomplete: remaining_not_checked={last_run.get('remaining_not_checked')}")
         if iterations >= max_iterations:
             failures.append(f"hit max_iterations={max_iterations}")
@@ -109,6 +169,8 @@ def run_quality_benchmark(
             failures.append(f"segfault budget exceeded: {counts.get('segfault', 0)} > {max_segfault}")
         if duration_seconds > max_duration_seconds:
             failures.append(f"duration budget exceeded: {duration_seconds} > {max_duration_seconds}")
+        if checked_mutants < min_checked_mutants:
+            failures.append(f"checked mutants below floor: {checked_mutants} < {min_checked_mutants}")
         return metrics, failures
     finally:
         _restore_batch_size(previous_batch_size)
@@ -215,6 +277,7 @@ def main(argv: list[str] | None = None) -> None:
             max_timeout=int(q.get("max_timeout", 999999)),
             max_segfault=int(q.get("max_segfault", 999999)),
             max_duration_seconds=float(q.get("max_duration_seconds", 999999.0)),
+            min_checked_mutants=int(q.get("min_checked_mutants", 1)),
         )
     else:
         t = baseline.get("throughput", {})

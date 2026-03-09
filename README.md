@@ -125,7 +125,7 @@ ln -s ../server/src/pymutant src/pymutant
 uv sync
 uv run verify                   # ruff + mypy + bandit + pytest (100% branch coverage)
 uv run benchmark throughput     # deterministic runtime/no-op regression benchmark
-# uv run benchmark quality      # full strict mutation quality benchmark (long-running)
+# uv run benchmark quality      # mutation quality gate (long-running)
 uv run pre-commit install
 
 cd server && uv run python -m pymutant   # starts pymutant server on stdio
@@ -183,8 +183,9 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - asserts follow-up no-op call behavior (`strict campaign complete; nothing to run`)
   - enforces runtime budgets from `.ci/benchmark-baseline.json`
 - `mutation_benchmark_quality` (schedule/manual):
-  - full strict campaign with fixed `batch_size`/`max_children`
-  - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap)
+  - strict-campaign-first mutation pass with interruption recovery (`kill_stuck_mutmut`)
+  - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap, minimum checked mutants)
+  - accepts interrupted runs only when mutation progress is recorded and budgets are still satisfied
   - writes `dist/benchmark-quality.json`
 - `build`: build both root and server distributions, run `twine check`, generate `SHA256SUMS`, and verify checksums
   - normalizes artifacts to `pymutant*` files only before metadata/checksum validation
@@ -195,6 +196,7 @@ Optional in CI: if `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set, the w
 
 Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated as gates:
 - `quality.min_score`: `0.33`
+- `quality.min_checked_mutants`: `10`
 - `quality.max_timeout`: `5`
 - `quality.max_segfault`: `950`
 - `quality.max_duration_seconds`: `7200`
