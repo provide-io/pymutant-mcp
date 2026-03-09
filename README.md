@@ -235,9 +235,9 @@ Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated 
 - `quality.max_timeout`: `3`
 - `quality.max_segfault`: `500`
 - `quality.max_duration_seconds`: `7200`
-- `throughput.max_first_call_seconds`: `140`
+- `throughput.max_first_call_seconds`: `160`
 - `throughput.max_noop_call_seconds`: `4`
-- `throughput.max_total_seconds`: `145`
+- `throughput.max_total_seconds`: `165`
 
 For stricter enforcement, lower failure budgets and raise `min_score` incrementally as the codebase improves.
 

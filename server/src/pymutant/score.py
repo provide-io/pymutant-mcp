@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
 
+from .io_utils import atomic_write_text
 from .results import get_results
 
 ScoreEntry: TypeAlias = dict[str, object]
@@ -103,6 +104,6 @@ def update_score_history(
     history["history"].append(entry)
 
     score_file = _score_file_path(root)
-    score_file.write_text(json.dumps(history, indent=2))
+    atomic_write_text(score_file, json.dumps(history, indent=2))
 
     return {"entry": entry, "history_length": len(history["history"])}

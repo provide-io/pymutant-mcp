@@ -68,6 +68,29 @@ def _detect_monorepo_src_paths(root: Path) -> list[str]:
     return sorted(str(p.relative_to(root)) + "/" for p in pkgs.glob("*/src") if p.is_dir())
 
 
+def _discover_top_level_modules(src_dir: Path) -> list[str]:
+    modules: list[str] = []
+    for child in sorted(src_dir.iterdir()):
+        if child.name.startswith((".", "_")):
+            continue
+        if child.is_dir() and (child / "__init__.py").exists():
+            modules.append(child.name)
+    return modules
+
+
+def _suggest_monorepo_symlink_paths(root: Path, mono_paths: list[str]) -> list[str]:
+    targets: set[str] = set()
+    for rel in mono_paths:
+        src_dir = root / rel
+        if not src_dir.is_dir():
+            continue
+        for module_name in _discover_top_level_modules(src_dir):
+            targets.add(f"src/{module_name}/")
+    if targets:
+        return sorted(targets)
+    return ["src/"]
+
+
 _MONOREPO_KEY_MISMATCH_NOTE = (
     "MONOREPO KEY MISMATCH: mutmut derives mutant keys by stripping only a leading "
     "'src.' prefix from file paths. For 'packages/foo/src/mymod/bar.py' the key becomes "
@@ -94,7 +117,7 @@ def detect_layout(project_root: Path | None = None) -> dict:
     mono_paths = _detect_monorepo_src_paths(root)
     if mono_paths:
         layout = "monorepo"
-        suggested_paths: list[str] = mono_paths
+        suggested_paths = _suggest_monorepo_symlink_paths(root, mono_paths)
         notes.append(_MONOREPO_KEY_MISMATCH_NOTE)
     elif (root / "src").is_dir():
         layout = "flat_src"

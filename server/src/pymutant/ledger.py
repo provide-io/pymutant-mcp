@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
+from .io_utils import atomic_write_text
+
 LEDGER_FILE = ".pymutant-ledger.json"
 TERMINAL_STATUSES = {
     "killed",
@@ -91,7 +93,7 @@ def append_ledger_event(
             "mutants": filtered,
         }
     )
-    _ledger_path(project_root).write_text(json.dumps(data, indent=2) + "\n")
+    atomic_write_text(_ledger_path(project_root), json.dumps(data, indent=2) + "\n")
 
 
 def resolve_latest_statuses(project_root: Path | None = None) -> dict[str, str]:

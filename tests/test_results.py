@@ -108,14 +108,42 @@ def test_get_results_can_disable_ledger(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_get_mutant_diff_success(monkeypatch, tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+
     class Dummy:
         returncode = 0
         stdout = "diff text"
         stderr = ""
 
-    monkeypatch.setattr(results.subprocess, "run", lambda *a, **k: Dummy())
+    def _run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        seen["cmd"] = cmd
+        return Dummy()
+
+    monkeypatch.setattr(results.subprocess, "run", _run)
     out = results.get_mutant_diff("src.pkg.mod.a__mutmut_1", tmp_path)
     assert out == "diff text"
+    assert seen["cmd"] == ["mutmut", "show", "src.pkg.mod.a__mutmut_1"]
+
+
+def test_get_mutant_diff_prefers_project_venv_python(monkeypatch, tmp_path: Path) -> None:
+    py = tmp_path / ".venv" / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    seen: dict[str, object] = {}
+
+    class Dummy:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def _run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        seen["cmd"] = cmd
+        return Dummy()
+
+    monkeypatch.setattr(results.subprocess, "run", _run)
+    out = results.get_mutant_diff("m.a__mutmut_1", tmp_path)
+    assert out == "ok"
+    assert seen["cmd"] == [str(py), "-m", "mutmut", "show", "m.a__mutmut_1"]
 
 
 def test_get_mutant_diff_nonzero(monkeypatch, tmp_path: Path) -> None:

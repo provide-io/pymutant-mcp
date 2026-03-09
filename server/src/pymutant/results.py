@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TypeAlias
 
 from .ledger import resolve_latest_statuses
+from .mutmut_cmd import mutmut_cmd_prefix
 
 StatusMap: TypeAlias = dict[int | None, str]
 
@@ -131,9 +132,10 @@ def get_results(
 def get_mutant_diff(mutant_name: str, project_root: Path | None = None) -> str:
     """Return unified diff for a single mutant via `mutmut show <name>`."""
     root = _project_root_or_cwd(project_root)
+    cmd = mutmut_cmd_prefix(root) + ["show", mutant_name]
     try:
         result = subprocess.run(  # noqa: S603,S607  # nosec
-            ["mutmut", "show", mutant_name],
+            cmd,
             cwd=str(root),
             capture_output=True,
             text=True,

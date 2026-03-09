@@ -97,13 +97,38 @@ def test_detect_monorepo_src_paths(tmp_path: Path) -> None:
     assert setup._detect_monorepo_src_paths(tmp_path) == ["packages/foo/src/"]
 
 
+def test_discover_top_level_modules_skips_hidden_and_nondirs(tmp_path: Path) -> None:
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / ".hidden").mkdir()
+    (src_dir / "_private").mkdir()
+    (src_dir / "mod").mkdir()
+    (src_dir / "mod" / "__init__.py").write_text("")
+    (src_dir / "plain.py").write_text("x = 1\n")
+    assert setup._discover_top_level_modules(src_dir) == ["mod"]
+
+
+def test_suggest_monorepo_symlink_paths_skips_missing_src(tmp_path: Path) -> None:
+    out = setup._suggest_monorepo_symlink_paths(tmp_path, ["packages/foo/src/"])
+    assert out == ["src/"]
+
+
 def test_detect_layout_monorepo(tmp_path: Path) -> None:
-    (tmp_path / "packages" / "foo" / "src").mkdir(parents=True)
+    pkg = tmp_path / "packages" / "foo" / "src" / "mymod"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
     (tmp_path / "tests").mkdir()
     out = setup.detect_layout(tmp_path)
     assert out["layout"] == "monorepo"
-    assert out["suggested_config"]["paths_to_mutate"] == ["packages/foo/src/"]
+    assert out["suggested_config"]["paths_to_mutate"] == ["src/mymod/"]
     assert out["notes"]
+
+
+def test_detect_layout_monorepo_without_discoverable_packages_falls_back_to_src(tmp_path: Path) -> None:
+    (tmp_path / "packages" / "foo" / "src").mkdir(parents=True)
+    out = setup.detect_layout(tmp_path)
+    assert out["layout"] == "monorepo"
+    assert out["suggested_config"]["paths_to_mutate"] == ["src/"]
 
 
 def test_detect_layout_flat_src_and_also_copy(tmp_path: Path) -> None:

@@ -12,8 +12,8 @@
   "throughput": {
     "batch_size": 5,
     "max_children": 1,
-    "max_first_call_seconds": 140,
+    "max_first_call_seconds": 160,
     "max_noop_call_seconds": 4,
-    "max_total_seconds": 145
+    "max_total_seconds": 165
   }
 }

@@ -14,7 +14,9 @@ import tomllib
 from pathlib import Path
 from typing import TypedDict
 
+from .io_utils import atomic_write_text
 from .ledger import append_ledger_event
+from .mutmut_cmd import mutmut_cmd_prefix, preferred_python
 from .results import EXIT_CODE_STATUS
 
 MUTMUT_TIMEOUT = 30 * 60  # 30 minutes in seconds
@@ -54,17 +56,11 @@ def _extract_summary(output: str) -> str:
 
 
 def _preferred_python(root: Path) -> str | None:
-    candidate = root / ".venv" / "bin" / "python"
-    if candidate.exists():
-        return str(candidate)
-    return None
+    return preferred_python(root)
 
 
 def _mutmut_cmd_prefix(root: Path) -> list[str]:
-    preferred = _preferred_python(root)
-    if preferred:
-        return [preferred, "-m", "mutmut"]
-    return ["mutmut"]
+    return mutmut_cmd_prefix(root)
 
 
 def _batch_size() -> int:
@@ -173,12 +169,12 @@ def _init_or_load_strict_campaign(root: Path) -> StrictCampaign:
 
     names = _load_not_checked_mutants(root)
     campaign: StrictCampaign = {"names": names, "stale": [], "attempted": []}
-    campaign_path.write_text(json.dumps(campaign, indent=2) + "\n")
+    atomic_write_text(campaign_path, json.dumps(campaign, indent=2) + "\n")
     return campaign
 
 
 def _save_strict_campaign(root: Path, campaign: StrictCampaign) -> None:
-    _strict_campaign_path(root).write_text(json.dumps(campaign, indent=2) + "\n")
+    atomic_write_text(_strict_campaign_path(root), json.dumps(campaign, indent=2) + "\n")
 
 
 def _strict_remaining_names(root: Path, campaign: StrictCampaign) -> list[str]:
