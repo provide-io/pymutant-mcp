@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "history"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "score", "killed", "survived", "no_tests", "timeout", "total", "module_scores"],
+        "properties": {
+          "timestamp": {"type": "string"},
+          "score": {"type": "number"},
+          "killed": {"type": "number"},
+          "survived": {"type": "number"},
+          "no_tests": {"type": "number"},
+          "timeout": {"type": "number"},
+          "total": {"type": "number"},
+          "module_scores": {"type": "object"}
+        }
+      }
+    }
+  }
+}

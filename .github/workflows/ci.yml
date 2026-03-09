@@ -60,6 +60,9 @@ jobs:
       - name: Throughput benchmark
         run: uv run benchmark throughput --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-throughput.json
 
+      - name: Validate throughput schema
+        run: uv run python scripts/validate_json_schema.py --data dist/benchmark-throughput.json --schema schemas/benchmark-throughput.schema.json
+
       - name: Upload throughput benchmark artifact
         if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v4
@@ -88,6 +91,9 @@ jobs:
 
       - name: Quality benchmark
         run: uv run benchmark quality --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-quality.json
+
+      - name: Validate quality schema
+        run: uv run python scripts/validate_json_schema.py --data dist/benchmark-quality.json --schema schemas/benchmark-quality.schema.json
 
       - name: Render HTML report bundle
         run: |

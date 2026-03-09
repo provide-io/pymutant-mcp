@@ -27,6 +27,7 @@ VERIFY_STEPS: list[tuple[str, list[str]]] = [
         ],
     ),
     ("docs-links", ["python", "scripts/check_markdown_links.py", "--root", "."]),
+    ("schemas", ["python", "scripts/validate_repo_schemas.py"]),
     ("pytest", ["pytest", "-q"]),
 ]
 

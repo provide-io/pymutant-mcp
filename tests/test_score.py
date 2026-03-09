@@ -48,6 +48,23 @@ def test_compute_score(monkeypatch, tmp_path: Path) -> None:
     assert out["stale"] == 2
     assert out["suspicious"] == 4
     assert out["total"] == 14
+    assert set(out) == {
+        "score",
+        "score_pct",
+        "killed",
+        "survived",
+        "no_tests",
+        "timeout",
+        "segfault",
+        "crash",
+        "skipped",
+        "stale",
+        "suspicious",
+        "typecheck_failed",
+        "interrupted",
+        "not_checked",
+        "total",
+    }
 
 
 def test_compute_score_zero_denominator(monkeypatch, tmp_path: Path) -> None:
@@ -58,6 +75,27 @@ def test_compute_score_zero_denominator(monkeypatch, tmp_path: Path) -> None:
     )
     out = score.compute_score(tmp_path)
     assert out["score"] == 0.0
+
+
+def test_compute_score_calls_get_results_with_expected_args(monkeypatch, tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+
+    def _fake_get_results(**kwargs):  # type: ignore[no-untyped-def]
+        seen.update(kwargs)
+        return {"counts": {}, "total": 0}
+
+    monkeypatch.setattr(score, "get_results", _fake_get_results)
+    score.compute_score(tmp_path)
+    assert seen["include_killed"] is True
+    assert seen["use_ledger"] is True
+    assert seen["project_root"] == tmp_path
+
+
+def test_compute_score_uses_project_root_resolver(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(score, "_project_root_or_cwd", lambda _root: tmp_path)
+    monkeypatch.setattr(score, "get_results", lambda **_: {"counts": {}, "total": 0})
+    out = score.compute_score(None)
+    assert out["total"] == 0
 
 
 def test_load_score_history_missing(tmp_path: Path) -> None:

@@ -36,6 +36,7 @@ def test_verify_main_runs_all_steps(monkeypatch) -> None:
             True,
         ),
         ("==> running docs-links: python scripts/check_markdown_links.py --root .", True),
+        ("==> running schemas: python scripts/validate_repo_schemas.py", True),
         ("==> running pytest: pytest -q", True),
         ("verification passed", True),
     ]
@@ -59,6 +60,7 @@ def test_verify_main_runs_all_steps(monkeypatch) -> None:
             False,
         ),
         (["python", "scripts/check_markdown_links.py", "--root", "."], False),
+        (["python", "scripts/validate_repo_schemas.py"], False),
         (["pytest", "-q"], False),
     ]
 
