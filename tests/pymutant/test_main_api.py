@@ -13,43 +13,31 @@ def test_root_prefers_env(monkeypatch, tmp_path: Path) -> None:
     assert main._root() == tmp_path
 
 
-def test_root_prefers_cwd_workspace_over_project_root_file(monkeypatch, tmp_path: Path) -> None:
+def test_root_prefers_cwd_workspace(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
     workspace = tmp_path / "ws"
     workspace.mkdir()
     (workspace / "pyproject.toml").write_text("[project]\nname='x'\nversion='0.0.0'\n")
-    fallback = tmp_path / "fallback"
-    fallback.mkdir()
-
-    monkeypatch.setattr(main.Path, "read_text", lambda self: str(fallback))
-    monkeypatch.setattr(main.Path, "exists", lambda self: self.name == ".project-root" or self.name == "pyproject.toml")
     monkeypatch.chdir(workspace)
     assert main._root() == workspace
 
 
 def test_root_falls_back_to_cwd(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
-    monkeypatch.setattr(main.Path, "exists", lambda self: False)
     monkeypatch.chdir(tmp_path)
     assert main._root() == tmp_path
 
 
-def test_root_uses_project_root_file_when_cwd_not_workspace(monkeypatch, tmp_path: Path) -> None:
+def test_root_uses_cwd_when_not_workspace(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
-    configured = tmp_path / "configured"
-    configured.mkdir()
     no_project = tmp_path / "no_project"
     no_project.mkdir()
     monkeypatch.chdir(no_project)
-    monkeypatch.setattr(main.Path, "exists", lambda self: self.name == ".project-root")
-    monkeypatch.setattr(main.Path, "read_text", lambda self: str(configured))
-    assert main._root() == configured
+    assert main._root() == no_project
 
 
-def test_root_empty_project_root_file_falls_back_to_cwd(monkeypatch, tmp_path: Path) -> None:
+def test_root_ignores_legacy_project_root_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
-    monkeypatch.setattr(main.Path, "exists", lambda self: self.name == ".project-root")
-    monkeypatch.setattr(main.Path, "read_text", lambda self: "   ")
     monkeypatch.chdir(tmp_path)
     assert main._root() == tmp_path
 

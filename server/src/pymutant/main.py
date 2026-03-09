@@ -28,32 +28,17 @@ from .trends import trend_report
 mcp = FastMCP("pymutant")
 
 
-def _looks_like_project_root(path: Path) -> bool:
-    return (path / "pyproject.toml").exists() or (path / ".git").exists()
-
-
 def _root() -> Path:
     """Return the project root.
 
     Resolution order:
     1. PYMUTANT_PROJECT_ROOT env var
-    2. os.getcwd() when it looks like an active project workspace
-    3. .project-root file next to the server's pyproject.toml (fallback only)
-    4. os.getcwd()
+    2. os.getcwd()
     """
     env_root = os.environ.get("PYMUTANT_PROJECT_ROOT")
     if env_root:
         return Path(env_root)
-    cwd = Path(os.getcwd())
-    if _looks_like_project_root(cwd):
-        return cwd
-    _server_dir = Path(__file__).resolve().parent.parent.parent
-    _config = _server_dir / ".project-root"
-    if _config.exists():
-        configured = _config.read_text().strip()
-        if configured:
-            return Path(configured)
-    return cwd
+    return Path(os.getcwd())
 
 
 def _response(data: Any, *, ok: bool = True, error: dict[str, Any] | None = None) -> dict[str, Any]:
