@@ -92,8 +92,7 @@ def test_resolve_latest_statuses_matches_reference_property(events: list[dict[st
         root = Path(td)
         payload = {
             "events": [
-                {"timestamp": f"t{i}", "context": "property", "mutants": event}
-                for i, event in enumerate(events)
+                {"timestamp": f"t{i}", "context": "property", "mutants": event} for i, event in enumerate(events)
             ]
         }
         (root / ledger.LEDGER_FILE).write_text(json.dumps(payload))
@@ -109,7 +108,9 @@ def test_resolve_latest_statuses_matches_reference_property(events: list[dict[st
         assert ledger.resolve_latest_statuses(root) == expected
 
 
-@given(events=st.lists(st.dictionaries(keys=IDENT, values=st.sampled_from(sorted(ledger.TERMINAL_STATUSES)), max_size=8)))
+@given(
+    events=st.lists(st.dictionaries(keys=IDENT, values=st.sampled_from(sorted(ledger.TERMINAL_STATUSES)), max_size=8))
+)
 def test_ledger_status_count_consistency_property(events: list[dict[str, str]]) -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)

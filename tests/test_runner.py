@@ -146,7 +146,9 @@ def test_record_ledger_outcomes_records_stale_and_mapped(monkeypatch, tmp_path: 
 
 def test_record_ledger_outcomes_empty_names_noop(monkeypatch, tmp_path: Path) -> None:
     called = {"append": False}
-    monkeypatch.setattr(runner, "_load_exit_codes_by_key", lambda _root: (_ for _ in ()).throw(AssertionError("unused")))
+    monkeypatch.setattr(
+        runner, "_load_exit_codes_by_key", lambda _root: (_ for _ in ()).throw(AssertionError("unused"))
+    )
     monkeypatch.setattr(
         runner,
         "append_ledger_event",
@@ -537,7 +539,10 @@ def test_run_mutations_strict_campaign_marks_stale_with_empty_stderr(monkeypatch
     )
     out = runner.run_mutations(strict_campaign=True, project_root=tmp_path)
     assert out["returncode"] == 0
-    assert out["stderr"] == "Filtered for specific mutants, but nothing matches\nMarked stale selectors and continuing strict campaign."
+    assert (
+        out["stderr"]
+        == "Filtered for specific mutants, but nothing matches\nMarked stale selectors and continuing strict campaign."
+    )
 
 
 def test_run_mutations_strict_campaign_no_pending_is_noop(monkeypatch, tmp_path: Path) -> None:
@@ -731,9 +736,7 @@ def test_run_mutations_batched_fallbacks_to_unfiltered_on_second_stale(monkeypat
     assert out["returncode"] == 0
 
 
-def test_run_mutations_batched_fallback_unfiltered_respects_explicit_max_children(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_mutations_batched_fallback_unfiltered_respects_explicit_max_children(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(runner, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     monkeypatch.setattr(runner, "_dependency_preflight", lambda _root, _cmd: None)
     monkeypatch.setattr(runner, "_batch_size", lambda: 1)

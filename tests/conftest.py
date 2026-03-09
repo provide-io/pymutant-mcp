@@ -39,9 +39,7 @@ if os.environ.get("MUTANT_UNDER_TEST"):
 
         import mutmut
 
-        assert not name.startswith("src."), (
-            "Failed trampoline hit. Module name starts with `src.`, which is invalid"
-        )
+        assert not name.startswith("src."), "Failed trampoline hit. Module name starts with `src.`, which is invalid"
         max_stack_depth = getattr(mutmut.config, "max_stack_depth", -1)
         if max_stack_depth != -1:
             frame = inspect.currentframe()

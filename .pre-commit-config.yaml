@@ -1,4 +1,10 @@
 repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.2
     hooks:
@@ -6,39 +12,63 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: v6.2.0
+    hooks:
+      - id: reuse
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        additional_dependencies: ["tomli"]
+
   - repo: local
     hooks:
       - id: mypy
         name: mypy strict
-        entry: mypy server/src src/repo_verify
-        language: python
-        language_version: python3.11
-        additional_dependencies:
-          - mypy==1.19.1
-          - mcp[cli]>=1.0.0
+        entry: uv run mypy server/src src/repo_verify
+        language: system
         pass_filenames: false
         always_run: true
         types: [python]
 
       - id: ty
         name: ty check
-        entry: ty check server/src src/repo_verify
-        language: python
-        language_version: python3.11
-        additional_dependencies:
-          - ty==0.0.19
-          - mcp[cli]>=1.0.0
+        entry: uv run ty check server/src src/repo_verify
+        language: system
         pass_filenames: false
         always_run: true
         types: [python]
 
       - id: bandit
         name: bandit
-        entry: bandit -r server/src src/repo_verify -ll
-        language: python
-        language_version: python3.11
-        additional_dependencies:
-          - bandit==1.9.4
+        entry: uv run bandit -r server/src/pymutant src/repo_verify -ll
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: pip-audit
+        name: pip-audit (vulnerability scan)
+        entry: uv run python -m pip_audit --path .
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: xenon
+        name: xenon complexity
+        entry: uv run xenon --max-absolute E --max-modules D --max-average B server/src/pymutant src/repo_verify
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: vulture
+        name: vulture dead code
+        entry: uv run vulture --min-confidence 80 server/src/pymutant src/repo_verify tests
+        language: system
         pass_filenames: false
         always_run: true
         types: [python]
@@ -49,3 +79,21 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: mutation-gate
+        name: mutmut gate (manual)
+        entry: uv run benchmark quality --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-quality.json
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+        types: [python]
+
+      - id: performance-smoke
+        name: performance smoke (manual)
+        entry: uv run benchmark throughput --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-throughput.json
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+        types: [python]

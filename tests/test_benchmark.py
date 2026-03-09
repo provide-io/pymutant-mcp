@@ -308,7 +308,9 @@ def test_run_quality_benchmark_checked_mutant_floor(monkeypatch, tmp_path: Path)
         lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
     )
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "total": 0, "not_checked": 0})
+    monkeypatch.setattr(
+        benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "total": 0, "not_checked": 0}
+    )
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
     _metrics, failures = benchmark.run_quality_benchmark(
@@ -415,9 +417,7 @@ def test_main_quality_and_throughput(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(benchmark, "run_quality_benchmark", lambda **_kwargs: ({"m": "q"}, []))
     out_q = tmp_path / "q.json"
-    benchmark.main(
-        ["quality", "--project-root", str(tmp_path), "--baseline", str(baseline), "--json-out", str(out_q)]
-    )
+    benchmark.main(["quality", "--project-root", str(tmp_path), "--baseline", str(baseline), "--json-out", str(out_q)])
     assert json.loads(out_q.read_text()) == {"m": "q"}
 
     monkeypatch.setattr(benchmark, "run_throughput_benchmark", lambda **_kwargs: ({"m": "t"}, []))

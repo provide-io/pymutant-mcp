@@ -231,8 +231,7 @@ def run_throughput_benchmark(
             failures.append(f"noop strict run was not no-op batch_size={second.get('batch_size')}")
         if int(second.get("remaining_not_checked", -1)) != 0:
             failures.append(
-                "noop strict run unexpectedly has remaining_not_checked="
-                f"{second.get('remaining_not_checked')}"
+                f"noop strict run unexpectedly has remaining_not_checked={second.get('remaining_not_checked')}"
             )
         if str(second.get("summary")) != "strict campaign complete; nothing to run":
             failures.append(f"unexpected noop summary: {second.get('summary')}")

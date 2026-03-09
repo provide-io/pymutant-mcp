@@ -48,10 +48,7 @@ def _extract_summary(output: str) -> str:
     """Extract the last meaningful line from mutmut output."""
     lines = [l.strip() for l in output.strip().splitlines() if l.strip()]  # noqa: E741
     for line in reversed(lines):
-        if any(
-            word in line.lower()
-            for word in ["killed", "survived", "mutant", "mutation"]
-        ):
+        if any(word in line.lower() for word in ["killed", "survived", "mutant", "mutation"]):
             return line
     return lines[-1] if lines else ""
 
@@ -254,8 +251,7 @@ def _dependency_preflight(root: Path, cmd_prefix: list[str]) -> str | None:
         if result.returncode != 0:
             module = check.replace("import ", "")
             return (
-                f"Dependency preflight failed: cannot import {module!r} in {python_bin}. "
-                "Run `uv sync` in this project."
+                f"Dependency preflight failed: cannot import {module!r} in {python_bin}. Run `uv sync` in this project."
             )
     return None
 
@@ -318,12 +314,10 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
             partial_out_obj = exc.output or ""
             partial_err_obj = exc.stderr or ""
             partial_out = (
-                partial_out_obj.decode(errors="replace")
-                if isinstance(partial_out_obj, bytes) else partial_out_obj
+                partial_out_obj.decode(errors="replace") if isinstance(partial_out_obj, bytes) else partial_out_obj
             )
             partial_err = (
-                partial_err_obj.decode(errors="replace")
-                if isinstance(partial_err_obj, bytes) else partial_err_obj
+                partial_err_obj.decode(errors="replace") if isinstance(partial_err_obj, bytes) else partial_err_obj
             )
 
             if len(partial_out) > len(out_seen) or len(partial_err) > len(err_seen):
@@ -411,7 +405,7 @@ def run_mutations(
                     "campaign_stale": len(strict_campaign_state["stale"]),
                     "remaining_not_checked": 0,
                 }
-            batch_names = pending_names[:_batch_size()]
+            batch_names = pending_names[: _batch_size()]
             cmd.extend(batch_names)
         else:
             pending_names = _load_not_checked_mutants(root)

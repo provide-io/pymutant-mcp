@@ -127,9 +127,21 @@ uv run verify                   # ruff + mypy + bandit + pytest (100% branch cov
 uv run benchmark throughput     # deterministic runtime/no-op regression benchmark
 # uv run benchmark quality      # mutation quality gate (long-running)
 uv run pre-commit install
+uv run pre-commit run --all-files
 
 cd server && uv run python -m pymutant   # starts pymutant server on stdio
 ```
+
+Pre-commit CQ stack includes:
+- `detect-secrets` (baseline-backed secret scanning)
+- Ruff lint/format
+- REUSE license compliance + SPDX checks
+- codespell
+- mypy + ty
+- bandit + pip-audit
+- xenon complexity + vulture dead-code checks
+- `verify` aggregate gate
+- manual hooks: `mutation-gate`, `performance-smoke`
 
 ### Property/Fuzz Test Profiles
 

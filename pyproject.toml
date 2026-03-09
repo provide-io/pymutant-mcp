@@ -8,13 +8,18 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "provide.io llc" }]
 dependencies = [
     "bandit>=1.8.6",
+    "codespell>=2.4.1",
     "hypothesis>=6.140.3",
     "mcp[cli]>=1.0.0",
     "mypy>=1.18.2",
+    "pip-audit>=2.9.0",
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.13.1",
+    "ty>=0.0.19",
+    "vulture>=2.14",
+    "xenon>=0.9.3",
 ]
 
 [project.scripts]

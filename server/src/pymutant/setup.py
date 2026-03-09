@@ -50,11 +50,7 @@ def _mutmut_version(root: Path) -> str | None:
 
 
 def _find_test_dirs(root: Path) -> list[str]:
-    return [
-        c + "/"
-        for c in ("tests", "test", "src/tests")
-        if (root / c).is_dir()
-    ]
+    return [c + "/" for c in ("tests", "test", "src/tests") if (root / c).is_dir()]
 
 
 def _normalize_to_list(value: object) -> tuple[list[str] | None, str | None]:
@@ -69,11 +65,7 @@ def _detect_monorepo_src_paths(root: Path) -> list[str]:
     pkgs = root / "packages"
     if not pkgs.is_dir():
         return []
-    return sorted(
-        str(p.relative_to(root)) + "/"
-        for p in pkgs.glob("*/src")
-        if p.is_dir()
-    )
+    return sorted(str(p.relative_to(root)) + "/" for p in pkgs.glob("*/src") if p.is_dir())
 
 
 _MONOREPO_KEY_MISMATCH_NOTE = (
@@ -84,7 +76,7 @@ _MONOREPO_KEY_MISMATCH_NOTE = (
     "FIX: create a symlink under src/ for each sub-package to mutate, then point "
     "paths_to_mutate at those symlinks:\n"
     "  ln -s ../../packages/foo/src/mymod src/mymod\n"
-    "  paths_to_mutate = [\"src/mymod/\"]\n"
+    '  paths_to_mutate = ["src/mymod/"]\n'
     "Also create a conftest.py at the repo root that prepends mutants/src to sys.path "
     "when MUTANT_UNDER_TEST is set — run pymutant_init with with_conftest=True."
 )
@@ -112,9 +104,7 @@ def detect_layout(project_root: Path | None = None) -> dict:
         suggested_paths = [
             p.name + "/"
             for p in sorted(root.iterdir())
-            if p.is_dir()
-            and not p.name.startswith((".", "_"))
-            and (p / "__init__.py").exists()
+            if p.is_dir() and not p.name.startswith((".", "_")) and (p / "__init__.py").exists()
         ]
 
     if (root / "scripts").is_dir():
@@ -148,24 +138,30 @@ def check_setup(project_root: Path | None = None) -> dict:
     checks: list[dict] = []
 
     version = _mutmut_version(root)
-    checks.append({
-        "name": "mutmut_installed",
-        "ok": version is not None,
-        "detail": version or "not found — install: uv add --dev mutmut",
-    })
+    checks.append(
+        {
+            "name": "mutmut_installed",
+            "ok": version is not None,
+            "detail": version or "not found — install: uv add --dev mutmut",
+        }
+    )
 
     pp_exists = (root / "pyproject.toml").exists()
-    checks.append({
-        "name": "pyproject_toml_exists",
-        "ok": pp_exists,
-        "detail": "present" if pp_exists else "missing",
-    })
+    checks.append(
+        {
+            "name": "pyproject_toml_exists",
+            "ok": pp_exists,
+            "detail": "present" if pp_exists else "missing",
+        }
+    )
 
-    checks.append({
-        "name": "mutmut_config_exists",
-        "ok": bool(cfg),
-        "detail": "present" if cfg else "missing — run pymutant_init to scaffold",
-    })
+    checks.append(
+        {
+            "name": "mutmut_config_exists",
+            "ok": bool(cfg),
+            "detail": "present" if cfg else "missing — run pymutant_init to scaffold",
+        }
+    )
 
     layout = detect_layout(root)["layout"]
 
@@ -173,59 +169,74 @@ def check_setup(project_root: Path | None = None) -> dict:
         paths, paths_note = _normalize_to_list(cfg.get("paths_to_mutate", []))
         tests, tests_note = _normalize_to_list(cfg.get("tests_dir", []))
 
-        checks.append({
-            "name": "paths_to_mutate_valid_type",
-            "ok": paths is not None,
-            "detail": paths_note or "ok",
-        })
-        checks.append({
-            "name": "tests_dir_valid_type",
-            "ok": tests is not None,
-            "detail": tests_note or "ok",
-        })
+        checks.append(
+            {
+                "name": "paths_to_mutate_valid_type",
+                "ok": paths is not None,
+                "detail": paths_note or "ok",
+            }
+        )
+        checks.append(
+            {
+                "name": "tests_dir_valid_type",
+                "ok": tests is not None,
+                "detail": tests_note or "ok",
+            }
+        )
 
         if paths is not None:
             missing = [p for p in paths if not (root / p).exists()]
-            checks.append({
-                "name": "paths_to_mutate_exist",
-                "ok": not missing,
-                "detail": "all exist" if not missing else f"missing: {missing}",
-            })
+            checks.append(
+                {
+                    "name": "paths_to_mutate_exist",
+                    "ok": not missing,
+                    "detail": "all exist" if not missing else f"missing: {missing}",
+                }
+            )
             has_packages_path = any("packages" in p for p in paths)
             if has_packages_path:
-                checks.append({
-                    "name": "no_monorepo_key_mismatch",
-                    "ok": False,
-                    "detail": (
-                        "paths_to_mutate contains 'packages/' paths — mutmut key derivation "
-                        "will not match trampoline module names. Use src/ symlinks instead. "
-                        "Run pymutant_detect_layout for the full explanation."
-                    ),
-                })
+                checks.append(
+                    {
+                        "name": "no_monorepo_key_mismatch",
+                        "ok": False,
+                        "detail": (
+                            "paths_to_mutate contains 'packages/' paths — mutmut key derivation "
+                            "will not match trampoline module names. Use src/ symlinks instead. "
+                            "Run pymutant_detect_layout for the full explanation."
+                        ),
+                    }
+                )
 
         if tests is not None:
             missing_t = [t for t in tests if not (root / t).exists()]
-            checks.append({
-                "name": "tests_dir_exist",
-                "ok": not missing_t,
-                "detail": "all exist" if not missing_t else f"missing: {missing_t}",
-            })
+            checks.append(
+                {
+                    "name": "tests_dir_exist",
+                    "ok": not missing_t,
+                    "detail": "all exist" if not missing_t else f"missing: {missing_t}",
+                }
+            )
 
     conftest = root / "conftest.py"
     guard_required = layout == "monorepo"
     guard_ok = conftest.exists() and "MUTANT_UNDER_TEST" in conftest.read_text()
-    checks.append({
-        "name": "conftest_mutant_guard",
-        "ok": (not guard_required) or guard_ok,
-        "detail": (
-            "not required for detected layout"
-            if not guard_required else (
-                "present" if guard_ok else (
-                    "conftest.py missing or lacks MUTANT_UNDER_TEST sys.path guard "
-                    "(needed for monorepo/editable-install projects — run pymutant_init with with_conftest=True)"
+    checks.append(
+        {
+            "name": "conftest_mutant_guard",
+            "ok": (not guard_required) or guard_ok,
+            "detail": (
+                "not required for detected layout"
+                if not guard_required
+                else (
+                    "present"
+                    if guard_ok
+                    else (
+                        "conftest.py missing or lacks MUTANT_UNDER_TEST sys.path guard "
+                        "(needed for monorepo/editable-install projects — run pymutant_init with with_conftest=True)"
+                    )
                 )
-            )
-        ),
-    })
+            ),
+        }
+    )
 
     return {"ok": all(c["ok"] for c in checks), "checks": checks}
