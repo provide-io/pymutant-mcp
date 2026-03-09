@@ -246,9 +246,11 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - enforces runtime budgets from `.ci/benchmark-baseline.json`
   - validates `dist/benchmark-throughput.json` against `schemas/benchmark-throughput.schema.json`
   - uploads `benchmark-throughput` artifact (`dist/benchmark-throughput.json`)
-- `mutation_zero_survivors` (PR only):
-  - runs `uv run mutation-gate --changed-only --base-ref origin/<base_branch> --max-seconds 900 --max-interruptions 8`
-  - fails PR when survivors remain after configured rounds
+- `mutation_zero_survivors` (PR + push):
+  - runs changed-only mutation gate:
+    - PR: `--base-ref origin/<base_branch>`
+    - push: `--base-ref <before_sha>` (or full gate on first push with no before SHA)
+  - fails CI when survivors remain after configured rounds
   - uploads `mutation-gate` artifact (`dist/mutation-gate.json`)
 - `mutation_benchmark_quality` (schedule/manual):
   - strict-campaign-first mutation pass with interruption recovery (`kill_stuck_mutmut`)

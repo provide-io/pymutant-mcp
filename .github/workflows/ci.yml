@@ -72,12 +72,14 @@ jobs:
           path: dist/benchmark-throughput.json
 
   mutation_zero_survivors:
-    if: ${{ github.event_name == 'pull_request' && github.actor != 'nektos/act' }}
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest
     needs: verify
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
@@ -85,11 +87,16 @@ jobs:
       - name: Setup Python
         run: uv python install 3.11
 
-      - name: Fetch base branch
-        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-
       - name: Mutation zero-survivor gate
-        run: uv run mutation-gate --changed-only --base-ref "origin/${{ github.base_ref }}" --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            uv run mutation-gate --changed-only --base-ref "origin/${{ github.base_ref }}" --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            uv run mutation-gate --changed-only --base-ref "${{ github.event.before }}" --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
+          else
+            uv run mutation-gate --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
+          fi
 
       - name: Upload mutation gate artifact
         if: ${{ always() && !env.ACT }}
