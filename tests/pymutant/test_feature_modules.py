@@ -152,19 +152,29 @@ def test_rank_survivors_no_survivors_and_git_errors(monkeypatch, tmp_path: Path)
 
 
 def test_explain_failure_categories() -> None:
-    assert failure_explain.explain_failure({"stderr": "cannot import mcp", "summary": "dependency preflight failed", "returncode": -1})[
-        "category"
-    ] == "environment/dependency"
-    assert failure_explain.explain_failure({"stderr": "paths_to_mutate invalid", "summary": "", "returncode": 1})[
-        "category"
-    ] == "setup/config"
-    assert failure_explain.explain_failure({"stderr": "", "summary": "timed out", "returncode": -15})[
-        "category"
-    ] == "test-harness"
-    assert failure_explain.explain_failure({"stderr": "", "summary": "mutation survived", "returncode": 0})[
-        "category"
-    ] == "mutant-behavior"
-    assert failure_explain.explain_failure({"stderr": "", "summary": "", "returncode": 0})["category"] == "unknown"
+    env_dep = failure_explain.explain_failure(
+        {"stderr": "cannot import mcp", "summary": "dependency preflight failed", "returncode": -1}
+    )
+    assert env_dep["category"] == "environment/dependency"
+    assert env_dep["confidence"] == 0.95
+    assert env_dep["recommended_action"] == "run `uv sync` in the target repo and retry"
+
+    setup_cfg = failure_explain.explain_failure({"stderr": "paths_to_mutate invalid", "summary": "", "returncode": 1})
+    assert setup_cfg["category"] == "setup/config"
+    assert setup_cfg["confidence"] == 0.9
+
+    harness = failure_explain.explain_failure({"stderr": "", "summary": "timed out", "returncode": -15})
+    assert harness["category"] == "test-harness"
+    assert harness["confidence"] == 0.8
+
+    mutant = failure_explain.explain_failure({"stderr": "", "summary": "mutation survived", "returncode": 0})
+    assert mutant["category"] == "mutant-behavior"
+    assert mutant["confidence"] == 0.75
+    assert mutant["recommended_action"] == "add/strengthen assertions for survivor behavior"
+
+    unknown = failure_explain.explain_failure({"stderr": "", "summary": "", "returncode": 0})
+    assert unknown["category"] == "unknown"
+    assert unknown["confidence"] == 0.5
 
 
 def test_policy_evaluate(tmp_path: Path) -> None:
