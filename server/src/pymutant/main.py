@@ -51,6 +51,8 @@ def pymutant_run(
     paths: list[str] | None = None,
     max_children: int | None = None,
     strict_campaign: bool = False,
+    changed_only: bool = False,
+    base_ref: str | None = None,
 ) -> dict:
     """Run mutmut mutation testing on the current project.
 
@@ -58,11 +60,15 @@ def pymutant_run(
         paths: Optional list of source paths to mutate (e.g. ["src/mymodule.py"]).
         max_children: Number of parallel workers (default: mutmut decides).
         strict_campaign: When True, snapshot pending mutants once and only process that fixed set.
+        changed_only: When True, mutate only changed Python files derived from git diff.
+        base_ref: Optional git base ref for changed_only diff (default: HEAD).
     """
     return run_mutations(
         paths=paths,
         max_children=max_children,
         strict_campaign=strict_campaign,
+        changed_only=changed_only,
+        base_ref=base_ref,
         project_root=_root(),
     )
 

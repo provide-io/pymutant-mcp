@@ -51,7 +51,7 @@ The `pymutant` server exposes these tools to Claude:
 
 | Tool | Purpose |
 |------|---------|
-| `pymutant_run` | Shell out to `mutmut run` |
+| `pymutant_run` | Shell out to `mutmut run` (supports `changed_only` + `base_ref`) |
 | `pymutant_results` | Read mutant status from `mutants/*.meta` |
 | `pymutant_show_diff` | Return unified diff for one mutant |
 | `pymutant_compute_score` | Compute killed/(killed+survived+timeout+segfault) (`crash` kept as alias) |
@@ -190,6 +190,14 @@ Calibrated on this repo:
 - `batch_size=10`, `max_children=2` is the best balance of throughput and stability.
 - Larger batches and higher concurrency were more likely to trigger flaky/segfault runs.
 - mutmut pytest runs disable cacheprovider (`-p no:cacheprovider`) to avoid cross-platform `WindowsPath` cache crashes.
+
+### Changed-Only Mode
+
+Use `pymutant_run(changed_only=true)` to target only changed Python files from git.
+- Default diff target is `HEAD` (includes current local changes).
+- Optional `base_ref` (for example `origin/main`) uses `base_ref...HEAD`.
+- Untracked Python files are included when they are under configured `paths_to_mutate`.
+- If no changed Python files match mutation roots, the tool returns a no-op success response.
 
 ### Strict Campaign Mode
 

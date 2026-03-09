@@ -57,10 +57,18 @@ def test_root_empty_project_root_file_falls_back_to_cwd(monkeypatch, tmp_path: P
 def test_pymutant_run_delegates(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "_root", lambda: tmp_path)
     monkeypatch.setattr(main, "run_mutations", lambda **kwargs: kwargs)
-    out = main.pymutant_run(paths=["x"], max_children=2, strict_campaign=True)
+    out = main.pymutant_run(
+        paths=["x"],
+        max_children=2,
+        strict_campaign=True,
+        changed_only=True,
+        base_ref="origin/main",
+    )
     assert out["paths"] == ["x"]
     assert out["max_children"] == 2
     assert out["strict_campaign"] is True
+    assert out["changed_only"] is True
+    assert out["base_ref"] == "origin/main"
     assert out["project_root"] == tmp_path
 
 

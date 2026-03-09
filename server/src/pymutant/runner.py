@@ -74,6 +74,72 @@ def _batch_size() -> int:
     return max(1, value)
 
 
+def _configured_mutation_roots(root: Path) -> list[str]:
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return []
+    try:
+        data = tomllib.loads(pyproject.read_text())
+    except (tomllib.TOMLDecodeError, OSError):
+        return []
+    paths = data.get("tool", {}).get("mutmut", {}).get("paths_to_mutate", [])
+    if isinstance(paths, str):
+        paths = [paths]
+    if not isinstance(paths, list):
+        return []
+    roots = [str(p).strip().rstrip("/") for p in paths if str(p).strip()]
+    return roots
+
+
+def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]:
+    mutation_roots = _configured_mutation_roots(root)
+    normalized: set[str] = set()
+    for raw in candidates:
+        candidate = raw.strip().replace("\\", "/")
+        if not candidate.endswith(".py"):
+            continue
+        if candidate.startswith("/"):
+            continue
+        file_path = (root / candidate).resolve()
+        if not file_path.exists() or not file_path.is_file():
+            continue
+        rel = str(file_path.relative_to(root.resolve())).replace("\\", "/")
+        if mutation_roots:
+            in_roots = any(rel == p or rel.startswith(f"{p}/") for p in mutation_roots)
+            if not in_roots:
+                continue
+        normalized.add(rel)
+    return sorted(normalized)
+
+
+def _resolve_changed_paths_for_mutation(root: Path, base_ref: str | None = None) -> tuple[list[str], str | None]:
+    if shutil.which("git") is None:
+        return [], "git is not available on this system"
+
+    diff_ref = f"{base_ref}...HEAD" if base_ref else "HEAD"
+    commands = [
+        ["git", "diff", "--name-only", "--diff-filter=AM", diff_ref],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    ]
+    candidates: list[str] = []
+    for cmd in commands:
+        try:
+            result = subprocess.run(  # noqa: S603  # nosec
+                cmd,
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return [], f"failed to run {' '.join(cmd)}: {exc}"
+        if result.returncode != 0:
+            return [], f"failed to detect changed files: {' '.join(cmd)}"
+        candidates.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return _filter_changed_python_paths(root, candidates), None
+
+
 def _load_not_checked_mutants(root: Path) -> list[str]:
     meta_dir = root / "mutants"
     if not meta_dir.exists():
@@ -362,6 +428,8 @@ def run_mutations(
     paths: list[str] | None = None,
     max_children: int | None = None,
     strict_campaign: bool = False,
+    changed_only: bool = False,
+    base_ref: str | None = None,
     project_root: Path | None = None,
 ) -> dict:
     """Run `mutmut run` and return structured output."""
@@ -378,10 +446,37 @@ def run_mutations(
 
     pending_names: list[str] = []
     batch_names: list[str] = []
+    changed_paths: list[str] = []
     strict_campaign_state: StrictCampaign | None = None
     cmd = cmd_prefix + ["run"]
     if paths:
         cmd.extend(paths)
+        strict_campaign = False
+        changed_only = False
+    elif changed_only:
+        changed_paths, changed_error = _resolve_changed_paths_for_mutation(root, base_ref=base_ref)
+        if changed_error:
+            return {
+                "returncode": -1,
+                "stdout": "",
+                "stderr": changed_error,
+                "summary": "changed file detection failed",
+                "changed_only": True,
+            }
+        if not changed_paths:
+            return {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "summary": "no changed python files under mutation roots",
+                "batched": False,
+                "batch_size": 0,
+                "strict_campaign": False,
+                "remaining_not_checked": 0,
+                "changed_only": True,
+                "changed_paths": [],
+            }
+        cmd.extend(changed_paths)
         strict_campaign = False
     else:
         if strict_campaign:
@@ -509,6 +604,9 @@ def run_mutations(
     else:
         result["strict_campaign"] = False
         result["remaining_not_checked"] = max(0, len(pending_names) - len(batch_names))
+    result["changed_only"] = changed_only
+    if changed_only:
+        result["changed_paths"] = changed_paths
     return result
 
 

@@ -87,6 +87,107 @@ def test_batch_size_invalid_or_small(monkeypatch) -> None:
     assert runner._batch_size() == 1
 
 
+def test_configured_mutation_roots_variants(tmp_path: Path) -> None:
+    assert runner._configured_mutation_roots(tmp_path) == []
+    (tmp_path / "pyproject.toml").write_text("[")
+    assert runner._configured_mutation_roots(tmp_path) == []
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate="src/pkg/"\n')
+    assert runner._configured_mutation_roots(tmp_path) == ["src/pkg"]
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/a/", " src/b "]\n')
+    assert runner._configured_mutation_roots(tmp_path) == ["src/a", "src/b"]
+    (tmp_path / "pyproject.toml").write_text("[tool.mutmut]\npaths_to_mutate=1\n")
+    assert runner._configured_mutation_roots(tmp_path) == []
+
+
+def test_filter_changed_python_paths(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "pkg"
+    src.mkdir(parents=True)
+    (src / "a.py").write_text("x=1\n")
+    (src / "b.txt").write_text("x\n")
+    outside = tmp_path / "other.py"
+    outside.write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pkg/"]\n')
+
+    out = runner._filter_changed_python_paths(
+        tmp_path,
+        [
+            "src/pkg/a.py",
+            "src/pkg/a.py",
+            "src/pkg/b.txt",
+            "other.py",
+            "/abs.py",
+            "missing.py",
+        ],
+    )
+    assert out == ["src/pkg/a.py"]
+
+
+def test_filter_changed_python_paths_without_config(tmp_path: Path) -> None:
+    (tmp_path / "mod.py").write_text("x=1\n")
+    out = runner._filter_changed_python_paths(tmp_path, ["mod.py"])
+    assert out == ["mod.py"]
+
+
+def test_resolve_changed_paths_for_mutation_no_git(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner.shutil, "which", lambda _name: None)
+    paths, err = runner._resolve_changed_paths_for_mutation(tmp_path)
+    assert paths == []
+    assert err == "git is not available on this system"
+
+
+def test_resolve_changed_paths_for_mutation_git_error(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/git")
+
+    class Done:
+        def __init__(self) -> None:
+            self.returncode = 1
+            self.stdout = ""
+
+    monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: Done())
+    paths, err = runner._resolve_changed_paths_for_mutation(tmp_path)
+    assert paths == []
+    assert err is not None
+
+
+def test_resolve_changed_paths_for_mutation_success(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/git")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("x=1\n")
+    (tmp_path / "new.py").write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/"]\n')
+
+    class Done:
+        def __init__(self, stdout: str) -> None:
+            self.returncode = 0
+            self.stdout = stdout
+
+    calls = {"n": 0}
+
+    def fake_run(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return Done("src/a.py\n")
+        return Done("new.py\n")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    paths, err = runner._resolve_changed_paths_for_mutation(tmp_path, base_ref="origin/main")
+    assert err is None
+    assert paths == ["src/a.py"]
+
+
+def test_resolve_changed_paths_for_mutation_timeout(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/git")
+
+    def fake_run(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["git"], timeout=1)
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    paths, err = runner._resolve_changed_paths_for_mutation(tmp_path)
+    assert paths == []
+    assert err is not None
+
+
 def test_load_not_checked_mutants(tmp_path: Path) -> None:
     meta_dir = tmp_path / "mutants" / "src"
     meta_dir.mkdir(parents=True)
@@ -492,7 +593,7 @@ def test_run_mutations_strict_campaign_uses_snapshot(monkeypatch, tmp_path: Path
 
     seen: dict[str, list[str]] = {}
 
-    def _popen(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+    def _popen(cmd, **_kwargs):
         seen["cmd"] = cmd
         return _FakePopen([("done", "")], returncode=0)
 
@@ -570,9 +671,48 @@ def test_run_mutations_strict_campaign_ignored_with_paths(monkeypatch, tmp_path:
         return _FakePopen([("done", "")], returncode=0)
 
     monkeypatch.setattr(runner.subprocess, "Popen", _popen)
-    out = runner.run_mutations(paths=["src/x.py"], strict_campaign=True, project_root=tmp_path)
+    out = runner.run_mutations(paths=["src/x.py"], strict_campaign=True, changed_only=True, project_root=tmp_path)
     assert seen["cmd"] == ["mutmut", "run", "src/x.py"]
     assert out["strict_campaign"] is False
+    assert out["changed_only"] is False
+
+
+def test_run_mutations_changed_only_detection_error(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    monkeypatch.setattr(runner, "_dependency_preflight", lambda _root, _cmd: None)
+    monkeypatch.setattr(runner, "_resolve_changed_paths_for_mutation", lambda *_a, **_k: ([], "boom"))
+    out = runner.run_mutations(changed_only=True, project_root=tmp_path)
+    assert out["returncode"] == -1
+    assert out["summary"] == "changed file detection failed"
+    assert out["changed_only"] is True
+
+
+def test_run_mutations_changed_only_no_paths(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    monkeypatch.setattr(runner, "_dependency_preflight", lambda _root, _cmd: None)
+    monkeypatch.setattr(runner, "_resolve_changed_paths_for_mutation", lambda *_a, **_k: ([], None))
+    out = runner.run_mutations(changed_only=True, project_root=tmp_path)
+    assert out["returncode"] == 0
+    assert out["summary"] == "no changed python files under mutation roots"
+    assert out["changed_only"] is True
+    assert out["changed_paths"] == []
+
+
+def test_run_mutations_changed_only_runs_paths(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runner, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    monkeypatch.setattr(runner, "_dependency_preflight", lambda _root, _cmd: None)
+    monkeypatch.setattr(runner, "_resolve_changed_paths_for_mutation", lambda *_a, **_k: (["src/a.py"], None))
+    seen: dict[str, list[str]] = {}
+
+    def _popen(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+        seen["cmd"] = cmd
+        return _FakePopen([("done", "")], returncode=0)
+
+    monkeypatch.setattr(runner.subprocess, "Popen", _popen)
+    out = runner.run_mutations(changed_only=True, base_ref="origin/main", project_root=tmp_path)
+    assert seen["cmd"] == ["mutmut", "run", "src/a.py"]
+    assert out["changed_only"] is True
+    assert out["changed_paths"] == ["src/a.py"]
 
 
 def test_run_mutations_paths_mutant_selectors_record_ledger(monkeypatch, tmp_path: Path) -> None:

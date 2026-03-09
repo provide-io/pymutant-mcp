@@ -31,3 +31,10 @@ Common keys:
 - `stdout`: command output when available
 
 For setup/layout checks, responses include `ok` and `checks` arrays with per-check details.
+
+## `pymutant_run` Notes
+
+`pymutant_run` supports these targeting modes:
+- explicit `paths`
+- `strict_campaign=true` (snapshot-based selector progression)
+- `changed_only=true` with optional `base_ref` for git-diff-based file targeting
