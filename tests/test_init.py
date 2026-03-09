@@ -25,9 +25,20 @@ def test_fmt_toml_list() -> None:
 
 def test_build_toml_block() -> None:
     block = init._build_toml_block(["src/"], ["tests/"], ["scripts/"], ["--maxfail=1"])
-    assert "[tool.mutmut]" in block
-    assert "also_copy" in block
-    assert "pytest_add_cli_args" in block
+    assert block.startswith("\n[tool.mutmut]\n")
+    assert 'paths_to_mutate = ["src/"]' in block
+    assert 'tests_dir = ["tests/"]' in block
+    assert 'also_copy = ["scripts/"]' in block
+    assert 'pytest_add_cli_args = [\n    "--maxfail=1",\n]' in block
+    assert block.endswith("\n")
+
+
+def test_build_toml_block_without_optional_sections() -> None:
+    block = init._build_toml_block(["pkg/"], ["specs/"], None, None)
+    assert 'paths_to_mutate = ["pkg/"]' in block
+    assert 'tests_dir = ["specs/"]' in block
+    assert "also_copy =" not in block
+    assert "pytest_add_cli_args" not in block
 
 
 def test_init_project_dry_run(monkeypatch, tmp_path: Path) -> None:
