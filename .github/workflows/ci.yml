@@ -20,15 +20,18 @@ jobs:
       - name: Setup Python
         run: uv python install 3.11
 
+      - name: Prepare artifact directory
+        run: mkdir -p dist
+
       - name: Bandit report
-        run: uv run bandit -r server/src/pymutant src/repo_verify -f json -o bandit-report.json -ll
+        run: uv run bandit -r server/src/pymutant src/repo_verify -f json -o dist/bandit-report.json -ll
 
       - name: Upload Bandit artifact
         if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
-          path: bandit-report.json
+          path: dist/bandit-report.json
 
       - name: Verify
         run: uv run verify

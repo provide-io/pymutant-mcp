@@ -8,7 +8,6 @@ __pycache__/
 .coverage
 htmlcov/
 dist/
-bandit-report.json
 mutants/
 mutation-score.json
 .pymutant-ledger.json

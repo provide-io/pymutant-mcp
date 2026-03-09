@@ -177,7 +177,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 
 GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
 - `verify`: quality + tests + coverage gate
-  - emits `bandit-report` artifact (`bandit-report.json`) for audit traceability
+  - emits `bandit-report` artifact (`dist/bandit-report.json`) for audit traceability
 - `mutation_benchmark_throughput` (push/PR/schedule/manual):
   - deterministic strict-campaign stale-selector pass
   - asserts follow-up no-op call behavior (`strict campaign complete; nothing to run`)
