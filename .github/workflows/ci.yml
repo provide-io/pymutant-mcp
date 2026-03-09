@@ -46,6 +46,11 @@ jobs:
       - name: Setup Python
         run: uv python install 3.11
 
+      - name: Clean dist
+        run: |
+          rm -rf dist
+          mkdir -p dist
+
       - name: Throughput benchmark
         run: uv run benchmark throughput --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-throughput.json
 
@@ -70,6 +75,11 @@ jobs:
       - name: Setup Python
         run: uv python install 3.11
 
+      - name: Clean dist
+        run: |
+          rm -rf dist
+          mkdir -p dist
+
       - name: Quality benchmark
         run: uv run benchmark quality --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-quality.json
 
@@ -92,6 +102,11 @@ jobs:
 
       - name: Setup Python
         run: uv python install 3.11
+
+      - name: Clean dist
+        run: |
+          rm -rf dist
+          mkdir -p dist
 
       - name: Build root package
         run: uv build

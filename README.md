@@ -182,23 +182,25 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - deterministic strict-campaign stale-selector pass
   - asserts follow-up no-op call behavior (`strict campaign complete; nothing to run`)
   - enforces runtime budgets from `.ci/benchmark-baseline.json`
+  - uploads `benchmark-throughput` artifact (`dist/benchmark-throughput.json`)
 - `mutation_benchmark_quality` (schedule/manual):
   - strict-campaign-first mutation pass with interruption recovery (`kill_stuck_mutmut`)
   - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap, minimum checked mutants)
   - accepts interrupted runs only when mutation progress is recorded and budgets are still satisfied
-  - writes `dist/benchmark-quality.json`
+  - uploads `benchmark-quality` / `release-benchmark-quality` artifact (`dist/benchmark-quality.json`)
 - `build`: build both root and server distributions, run `twine check`, generate `SHA256SUMS`, and verify checksums
   - normalizes artifacts to `pymutant*` files only before metadata/checksum validation
+  - uploads release artifact bundle (`release-dist`)
 
 Optional in CI: if `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set, the workflow signs `dist/SHA256SUMS` to produce `dist/SHA256SUMS.asc`.
 
 ### Benchmark Baseline
 
 Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated as gates:
-- `quality.min_score`: `0.33`
+- `quality.min_score`: `0.40`
 - `quality.min_checked_mutants`: `10`
-- `quality.max_timeout`: `5`
-- `quality.max_segfault`: `950`
+- `quality.max_timeout`: `3`
+- `quality.max_segfault`: `500`
 - `quality.max_duration_seconds`: `7200`
 - `throughput.max_first_call_seconds`: `140`
 - `throughput.max_noop_call_seconds`: `4`
