@@ -3,7 +3,7 @@
     "batch_size": 10,
     "max_children": 1,
     "max_iterations": 500,
-    "min_score": 0.38,
+    "min_score": 0.385,
     "min_checked_mutants": 10,
     "max_timeout": 3,
     "max_segfault": 500,

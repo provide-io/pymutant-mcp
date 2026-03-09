@@ -259,7 +259,7 @@ Optional in CI: if `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set, the w
 ### Benchmark Baseline
 
 Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated as gates:
-- `quality.min_score`: `0.38`
+- `quality.min_score`: `0.385`
 - `quality.min_checked_mutants`: `10`
 - `quality.max_timeout`: `3`
 - `quality.max_segfault`: `500`
