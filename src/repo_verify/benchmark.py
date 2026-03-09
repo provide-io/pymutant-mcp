@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from pymutant import ledger, results, runner, score
+from pymutant.policy import evaluate_policy
+from pymutant.profiles import resolve_profile
+from pymutant.schema import with_schema
+from pymutant.trends import trend_report
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -28,7 +32,7 @@ def _write_json(path: Path | None, payload: dict[str, Any]) -> None:
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    path.write_text(json.dumps(with_schema(payload), indent=2) + "\n")
 
 
 def _set_batch_size(batch_size: int) -> str | None:
@@ -140,7 +144,9 @@ def run_quality_benchmark(
                 }
             )
 
-        metrics: dict[str, Any] = {
+        history = score.load_score_history(project_root)
+        metrics: dict[str, Any] = with_schema(
+            {
             "mode": "quality",
             "batch_size": batch_size,
             "max_children": max_children,
@@ -152,7 +158,11 @@ def run_quality_benchmark(
             "counts": counts,
             "interruptions": interruptions,
             "checked_mutants": checked_mutants,
-        }
+            "profile": resolve_profile(project_root=project_root),
+            "policy": evaluate_policy(current_score=float(score_data["score"]), project_root=project_root),
+            "trend": trend_report(history),
+            }
+        )
 
         failures: list[str] = []
         if int(last_run.get("returncode", -1)) != 0 and not interrupted_with_progress:
@@ -209,7 +219,8 @@ def run_throughput_benchmark(
         noop_seconds = round(time.monotonic() - second_start, 3)
         total_seconds = round(time.monotonic() - start, 3)
 
-        metrics: dict[str, Any] = {
+        metrics: dict[str, Any] = with_schema(
+            {
             "mode": "throughput",
             "batch_size": batch_size,
             "max_children": max_children,
@@ -218,7 +229,9 @@ def run_throughput_benchmark(
             "total_seconds": total_seconds,
             "first_call": first,
             "noop_call": second,
-        }
+            "profile": resolve_profile(project_root=project_root),
+            }
+        )
 
         failures: list[str] = []
         if int(first.get("returncode", -1)) != 0:

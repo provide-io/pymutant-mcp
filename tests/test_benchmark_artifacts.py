@@ -11,6 +11,8 @@ from repo_verify import benchmark
 
 def _assert_quality_payload(payload: dict[str, Any]) -> None:
     assert payload["mode"] == "quality"
+    assert payload["schema_version"] == "1.0"
+    assert "generated_at" in payload
     assert isinstance(payload["batch_size"], int)
     assert isinstance(payload["max_children"], int)
     assert isinstance(payload["iterations"], int)
@@ -21,10 +23,15 @@ def _assert_quality_payload(payload: dict[str, Any]) -> None:
     assert isinstance(payload["counts"], dict)
     assert isinstance(payload["interruptions"], list)
     assert isinstance(payload["checked_mutants"], int)
+    assert isinstance(payload["profile"], dict)
+    assert isinstance(payload["policy"], dict)
+    assert isinstance(payload["trend"], dict)
 
 
 def _assert_throughput_payload(payload: dict[str, Any]) -> None:
     assert payload["mode"] == "throughput"
+    assert payload["schema_version"] == "1.0"
+    assert "generated_at" in payload
     assert isinstance(payload["batch_size"], int)
     assert isinstance(payload["max_children"], int)
     assert isinstance(payload["first_call_seconds"], float)
@@ -32,6 +39,7 @@ def _assert_throughput_payload(payload: dict[str, Any]) -> None:
     assert isinstance(payload["total_seconds"], float)
     assert isinstance(payload["first_call"], dict)
     assert isinstance(payload["noop_call"], dict)
+    assert isinstance(payload["profile"], dict)
 
 
 def test_quality_benchmark_payload_contract(monkeypatch, tmp_path: Path) -> None:

@@ -60,6 +60,24 @@ The `pymutant` server exposes these tools to Claude:
 | `pymutant_score_history` | Load full score history |
 | `pymutant_ledger_status` | Show ledger + strict-campaign progress state |
 | `pymutant_reset_campaign` | Reset strict-campaign state (optionally clear ledger) |
+| `pymutant_rank_survivors` | Rank survivors by impact/frequency/churn priority |
+| `pymutant_explain_failure` | Classify failure source and suggest remediation |
+| `pymutant_policy_check` | Evaluate policy gates (baseline-drop + absolute floor) |
+| `pymutant_trend_report` | Mutation drift/regression summary from score history |
+| `pymutant_suggest_pytest_patch` | Generate pytest patch suggestion (optional `apply=true`) |
+| `pymutant_render_report` | Generate HTML report bundle under `dist/` |
+
+All tools return the same response envelope:
+
+```json
+{
+  "ok": true,
+  "data": {},
+  "error": null,
+  "schema_version": "1.0",
+  "generated_at": "2026-03-09T14:00:00+00:00"
+}
+```
 
 ## Score History
 

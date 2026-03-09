@@ -89,12 +89,38 @@ jobs:
       - name: Quality benchmark
         run: uv run benchmark quality --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-quality.json
 
+      - name: Render HTML report bundle
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from pymutant import results, score
+          from pymutant.policy import evaluate_policy
+          from pymutant.reporting import render_html_bundle
+          from pymutant.trends import trend_report
+
+          root = Path(".").resolve()
+          render_html_bundle(
+              score=score.compute_score(project_root=root),
+              results=results.get_results(include_killed=False, project_root=root),
+              policy=evaluate_policy(current_score=float(score.compute_score(project_root=root)["score"]), project_root=root),
+              trend=trend_report(score.load_score_history(project_root=root)),
+              project_root=root,
+          )
+          PY
+
       - name: Upload quality benchmark artifact
         if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-quality
           path: dist/benchmark-quality.json
+
+      - name: Upload HTML report artifact
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report-html
+          path: dist/pymutant-report.html
 
   build:
     runs-on: ubuntu-latest

@@ -61,12 +61,31 @@ def test_compute_score_zero_denominator(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_load_score_history_missing(tmp_path: Path) -> None:
-    assert score.load_score_history(tmp_path) == {"history": []}
+    out = score.load_score_history(tmp_path)
+    assert out["history"] == []
+    assert out["schema_version"] == "1.0"
 
 
 def test_load_score_history_bad_json(tmp_path: Path) -> None:
     (tmp_path / "mutation-score.json").write_text("broken")
-    assert score.load_score_history(tmp_path) == {"history": []}
+    out = score.load_score_history(tmp_path)
+    assert out["history"] == []
+    assert out["schema_version"] == "1.0"
+
+
+def test_load_score_history_non_dict_and_non_list(tmp_path: Path) -> None:
+    (tmp_path / "mutation-score.json").write_text("[]")
+    out = score.load_score_history(tmp_path)
+    assert out["history"] == []
+    (tmp_path / "mutation-score.json").write_text(json.dumps({"history": "bad"}))
+    out2 = score.load_score_history(tmp_path)
+    assert out2["history"] == []
+
+
+def test_load_score_history_valid_list(tmp_path: Path) -> None:
+    (tmp_path / "mutation-score.json").write_text(json.dumps({"history": [{"score": 0.2}]}))
+    out = score.load_score_history(tmp_path)
+    assert out["history"] == [{"score": 0.2}]
 
 
 def test_update_score_history_with_label(monkeypatch, tmp_path: Path) -> None:
@@ -82,13 +101,17 @@ def test_update_score_history_with_label(monkeypatch, tmp_path: Path) -> None:
             "total": 1,
         },
     )
+    monkeypatch.setattr(score, "get_results", lambda **_: {"mutants": []})
+    monkeypatch.setattr(score, "compute_module_scores", lambda _mutants: {})
 
     out = score.update_score_history(label="run", project_root=tmp_path)
     assert out["history_length"] == 1
     assert out["entry"]["label"] == "run"
+    assert out["schema_version"] == "1.0"
 
     history = json.loads((tmp_path / "mutation-score.json").read_text())
     assert len(history["history"]) == 1
+    assert history["schema_version"] == "1.0"
 
 
 def test_update_score_history_without_label(monkeypatch, tmp_path: Path) -> None:
@@ -104,6 +127,35 @@ def test_update_score_history_without_label(monkeypatch, tmp_path: Path) -> None
             "total": 5,
         },
     )
+    monkeypatch.setattr(score, "get_results", lambda **_: {"mutants": []})
+    monkeypatch.setattr(score, "compute_module_scores", lambda _mutants: {"m": 0.5})
 
     out = score.update_score_history(project_root=tmp_path)
     assert "label" not in out["entry"]
+    assert out["entry"]["module_scores"] == {"m": 0.5}
+
+
+def test_update_score_history_repairs_non_list_history(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "mutation-score.json").write_text(json.dumps({"history": "bad"}))
+    monkeypatch.setattr(
+        score,
+        "compute_score",
+        lambda _root: {"score": 0.1, "killed": 0, "survived": 1, "no_tests": 0, "timeout": 0, "total": 1},
+    )
+    monkeypatch.setattr(score, "get_results", lambda **_: {"mutants": []})
+    monkeypatch.setattr(score, "compute_module_scores", lambda _mutants: {})
+    out = score.update_score_history(project_root=tmp_path)
+    assert out["history_length"] == 1
+
+
+def test_update_score_history_non_list_from_loader(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        score,
+        "compute_score",
+        lambda _root: {"score": 0.1, "killed": 0, "survived": 1, "no_tests": 0, "timeout": 0, "total": 1},
+    )
+    monkeypatch.setattr(score, "get_results", lambda **_: {"mutants": []})
+    monkeypatch.setattr(score, "compute_module_scores", lambda _mutants: {})
+    monkeypatch.setattr(score, "load_score_history", lambda _root: {"history": "oops"})
+    out = score.update_score_history(project_root=tmp_path)
+    assert out["history_length"] == 1

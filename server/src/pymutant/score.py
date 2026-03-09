@@ -11,9 +11,11 @@ from typing import TypeAlias
 
 from .io_utils import atomic_write_text
 from .results import get_results
+from .schema import with_schema
+from .trends import compute_module_scores
 
 ScoreEntry: TypeAlias = dict[str, object]
-ScoreHistory: TypeAlias = dict[str, list[ScoreEntry]]
+ScoreHistory: TypeAlias = dict[str, object]
 
 SCORE_FILE = "mutation-score.json"
 
@@ -73,11 +75,17 @@ def load_score_history(project_root: Path | None = None) -> ScoreHistory:
     """Load score history from mutation-score.json, returning empty history if absent."""
     score_file = _score_file_path(project_root)
     if not score_file.exists():
-        return {"history": []}
+        return {"history": [], "schema_version": "1.0"}
     try:
-        return json.loads(score_file.read_text())
+        data = json.loads(score_file.read_text())
     except (json.JSONDecodeError, OSError):
-        return {"history": []}
+        return {"history": [], "schema_version": "1.0"}
+    if not isinstance(data, dict):
+        return {"history": [], "schema_version": "1.0"}
+    history = data.get("history")
+    if not isinstance(history, list):
+        history = []
+    return with_schema({"history": history})
 
 
 def update_score_history(
@@ -88,6 +96,7 @@ def update_score_history(
     root = _project_root_or_cwd(project_root)
     current = compute_score(root)
 
+    mutants = get_results(include_killed=True, project_root=root)["mutants"]
     entry: ScoreEntry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "score": current["score"],
@@ -96,14 +105,19 @@ def update_score_history(
         "no_tests": current["no_tests"],
         "timeout": current["timeout"],
         "total": current["total"],
+        "module_scores": compute_module_scores(mutants),
     }
     if label:
         entry["label"] = label
 
     history = load_score_history(root)
-    history["history"].append(entry)
+    entries = history.get("history")
+    if not isinstance(entries, list):
+        entries = []
+        history["history"] = entries
+    entries.append(entry)
 
     score_file = _score_file_path(root)
-    atomic_write_text(score_file, json.dumps(history, indent=2))
+    atomic_write_text(score_file, json.dumps(with_schema(history), indent=2))
 
-    return {"entry": entry, "history_length": len(history["history"])}
+    return with_schema({"entry": entry, "history_length": len(entries)})

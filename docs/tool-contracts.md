@@ -18,19 +18,26 @@
 - `pymutant_init`
 - `pymutant_ledger_status`
 - `pymutant_reset_campaign`
+- `pymutant_rank_survivors`
+- `pymutant_explain_failure`
+- `pymutant_policy_check`
+- `pymutant_trend_report`
+- `pymutant_suggest_pytest_patch`
+- `pymutant_render_report`
 
 ## Error Shape
 
-Tool wrappers return structured objects instead of raising exceptions at the tool boundary.
+Tool wrappers return structured envelope objects instead of raising exceptions at the tool boundary.
 
 Common keys:
 
-- `returncode`: process/tool exit code (`0` on success, negative for internal interruption/timeout conditions)
-- `summary`: short human-readable status
-- `stderr`: diagnostic text when available
-- `stdout`: command output when available
+- `ok`: boolean success flag
+- `data`: tool-specific payload
+- `error`: object or `null` (`type`, `message`, `details`)
+- `schema_version`: schema tag for downstream parsers
+- `generated_at`: UTC timestamp
 
-For setup/layout checks, responses include `ok` and `checks` arrays with per-check details.
+For setup/layout checks, `data.checks` includes per-check details.
 
 ## `pymutant_run` Notes
 

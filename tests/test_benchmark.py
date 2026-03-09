@@ -26,7 +26,10 @@ def test_write_json_none_and_path(tmp_path: Path) -> None:
     benchmark._write_json(None, {"a": 1})
     out = tmp_path / "dir" / "out.json"
     benchmark._write_json(out, {"a": 1})
-    assert json.loads(out.read_text()) == {"a": 1}
+    payload = json.loads(out.read_text())
+    assert payload["a"] == 1
+    assert payload["schema_version"] == "1.0"
+    assert "generated_at" in payload
 
 
 def test_batch_size_env_restore(monkeypatch) -> None:
@@ -418,14 +421,18 @@ def test_main_quality_and_throughput(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(benchmark, "run_quality_benchmark", lambda **_kwargs: ({"m": "q"}, []))
     out_q = tmp_path / "q.json"
     benchmark.main(["quality", "--project-root", str(tmp_path), "--baseline", str(baseline), "--json-out", str(out_q)])
-    assert json.loads(out_q.read_text()) == {"m": "q"}
+    q_payload = json.loads(out_q.read_text())
+    assert q_payload["m"] == "q"
+    assert q_payload["schema_version"] == "1.0"
 
     monkeypatch.setattr(benchmark, "run_throughput_benchmark", lambda **_kwargs: ({"m": "t"}, []))
     out_t = tmp_path / "t.json"
     benchmark.main(
         ["throughput", "--project-root", str(tmp_path), "--baseline", str(baseline), "--json-out", str(out_t)]
     )
-    assert json.loads(out_t.read_text()) == {"m": "t"}
+    t_payload = json.loads(out_t.read_text())
+    assert t_payload["m"] == "t"
+    assert t_payload["schema_version"] == "1.0"
 
 
 def test_main_exits_on_failure(monkeypatch, tmp_path: Path) -> None:
