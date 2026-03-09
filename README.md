@@ -164,6 +164,7 @@ ln -s ../server/src/pymutant src/pymutant
 uv sync
 uv run verify                   # ruff + mypy + bandit + pytest (100% branch coverage)
 uv run python scripts/validate_repo_schemas.py
+uv run mutation-sweep --max-rounds 4 --json-out dist/mutation-gate.json
 uv run benchmark throughput     # deterministic runtime/no-op regression benchmark
 # uv run benchmark quality      # mutation quality gate (long-running)
 uv run pre-commit install
@@ -182,6 +183,7 @@ Pre-commit CQ stack includes:
 - xenon complexity + vulture dead-code checks
 - `verify` aggregate gate
 - manual hooks: `mutation-gate`, `performance-smoke`
+  - `mutation-sweep` manual hook enforces zero survivors for local campaign runs
 
 ### Property/Fuzz Test Profiles
 
@@ -244,6 +246,10 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - enforces runtime budgets from `.ci/benchmark-baseline.json`
   - validates `dist/benchmark-throughput.json` against `schemas/benchmark-throughput.schema.json`
   - uploads `benchmark-throughput` artifact (`dist/benchmark-throughput.json`)
+- `mutation_zero_survivors` (PR only):
+  - runs `uv run mutation-gate --changed-only --base-ref origin/<base_branch>`
+  - fails PR when survivors remain after configured rounds
+  - uploads `mutation-gate` artifact (`dist/mutation-gate.json`)
 - `mutation_benchmark_quality` (schedule/manual):
   - strict-campaign-first mutation pass with interruption recovery (`kill_stuck_mutmut`)
   - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap, minimum checked mutants)

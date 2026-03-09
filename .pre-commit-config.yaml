@@ -113,6 +113,15 @@ repos:
         stages: [manual]
         types: [python]
 
+      - id: mutation-sweep
+        name: mutation sweep zero-survivor (manual)
+        entry: uv run mutation-sweep --max-rounds 4 --json-out dist/mutation-gate.json
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+        types: [python]
+
       - id: performance-smoke
         name: performance smoke (manual)
         entry: uv run benchmark throughput --baseline .ci/benchmark-baseline.json --json-out dist/benchmark-throughput.json

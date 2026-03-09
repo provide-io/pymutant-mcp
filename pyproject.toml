@@ -26,6 +26,8 @@ dependencies = [
 [project.scripts]
 benchmark = "repo_verify.benchmark:main"
 verify = "repo_verify.cli:main"
+mutation-gate = "repo_verify.mutation_gate:main"
+mutation-sweep = "repo_verify.mutation_gate:main"
 
 [build-system]
 requires = ["hatchling"]
