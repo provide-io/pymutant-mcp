@@ -124,6 +124,8 @@ ln -s ../server/src/pymutant src/pymutant
 ```bash
 uv sync
 uv run verify                   # ruff + mypy + bandit + pytest (100% branch coverage)
+uv run benchmark throughput     # deterministic runtime/no-op regression benchmark
+# uv run benchmark quality      # full strict mutation quality benchmark (long-running)
 uv run pre-commit install
 
 cd server && uv run python -m pymutant   # starts pymutant server on stdio
@@ -173,13 +175,41 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 
 ## CI and Local CI
 
-GitHub Actions runs `.github/workflows/ci.yml` with two jobs:
+GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
 - `verify`: quality + tests + coverage gate
   - emits `bandit-report` artifact (`bandit-report.json`) for audit traceability
-- `mutation_smoke`: strict-campaign one-batch runtime smoke for the MCP mutation path
+- `mutation_benchmark_throughput` (push/PR/schedule/manual):
+  - deterministic strict-campaign stale-selector pass
+  - asserts follow-up no-op call behavior (`strict campaign complete; nothing to run`)
+  - enforces runtime budgets from `.ci/benchmark-baseline.json`
+- `mutation_benchmark_quality` (schedule/manual):
+  - full strict campaign with fixed `batch_size`/`max_children`
+  - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap)
+  - writes `dist/benchmark-quality.json`
 - `build`: build both root and server distributions, run `twine check`, generate `SHA256SUMS`, and verify checksums
+  - normalizes artifacts to `pymutant*` files only before metadata/checksum validation
 
 Optional in CI: if `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set, the workflow signs `dist/SHA256SUMS` to produce `dist/SHA256SUMS.asc`.
+
+### Benchmark Baseline
+
+Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated as gates:
+- `quality.min_score`: `0.33`
+- `quality.max_timeout`: `5`
+- `quality.max_segfault`: `950`
+- `quality.max_duration_seconds`: `7200`
+- `throughput.max_first_call_seconds`: `140`
+- `throughput.max_noop_call_seconds`: `4`
+- `throughput.max_total_seconds`: `145`
+
+For stricter enforcement, lower failure budgets and raise `min_score` incrementally as the codebase improves.
+
+### Release Tag Gate
+
+Tag pushes (`v*`) run `.github/workflows/release-readiness.yml`, which requires:
+1. `uv run verify` to pass.
+2. `uv run benchmark quality` to pass against `.ci/benchmark-baseline.json`.
+3. Build + twine + checksum validation with `pymutant*` artifacts only.
 
 Run the same workflow locally with `act`:
 

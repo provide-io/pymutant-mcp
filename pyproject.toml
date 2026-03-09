@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
+benchmark = "repo_verify.benchmark:main"
 verify = "repo_verify.cli:main"
 
 [build-system]
