@@ -126,7 +126,13 @@ flowchart TD
     H --> I["pymutant_update_score_history"]
 ```
 
-The MCP server inherits the current working directory from Claude Code, so all paths are relative to the project you're working in.
+Project root resolution is runtime-only and non-sticky:
+- `PYMUTANT_PROJECT_ROOT` (preferred, explicit)
+- process `cwd` (fallback)
+
+You can also set root dynamically at launch:
+- `pymutant --project-root /abs/path/to/repo`
+- `pymutant --project-root .` (resolved relative to launch cwd)
 
 ## Docs
 
@@ -170,7 +176,7 @@ uv run benchmark throughput     # deterministic runtime/no-op regression benchma
 uv run pre-commit install
 uv run pre-commit run --all-files
 
-cd server && uv run python -m pymutant   # starts pymutant server on stdio
+cd server && uv run python -m pymutant --project-root ..   # starts pymutant server on stdio for repo root
 ```
 
 Pre-commit CQ stack includes:

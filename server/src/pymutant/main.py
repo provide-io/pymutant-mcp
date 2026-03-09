@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 from typing import Any
@@ -340,7 +341,18 @@ def pymutant_render_report(profile: str | None = None, config_path: str | None =
     return _response(report)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="pymutant")
+    parser.add_argument(
+        "--project-root",
+        help="Project root to operate on (overrides cwd for this process).",
+    )
+    args = parser.parse_args(argv)
+    if args.project_root:
+        root = Path(args.project_root).expanduser()
+        if not root.is_absolute():
+            root = (Path.cwd() / root).resolve()
+        os.environ["PYMUTANT_PROJECT_ROOT"] = str(root)
     mcp.run()
 
 

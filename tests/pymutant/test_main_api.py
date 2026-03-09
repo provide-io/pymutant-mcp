@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pymutant import main
@@ -254,5 +255,30 @@ def test_policy_check_failure(monkeypatch, tmp_path: Path) -> None:
 def test_main_runs_server(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(main.mcp, "run", lambda: calls.append("run"))
-    main.main()
+    main.main([])
     assert calls == ["run"]
+
+
+def test_main_sets_project_root_from_cli_relative(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
+    calls: list[str] = []
+    monkeypatch.setattr(main.mcp, "run", lambda: calls.append("run"))
+
+    main.main(["--project-root", "repo"])
+
+    assert calls == ["run"]
+    assert os.environ["PYMUTANT_PROJECT_ROOT"] == str(repo.resolve())
+
+
+def test_main_sets_project_root_from_cli_absolute(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("PYMUTANT_PROJECT_ROOT", raising=False)
+    calls: list[str] = []
+    monkeypatch.setattr(main.mcp, "run", lambda: calls.append("run"))
+
+    main.main(["--project-root", str(tmp_path)])
+
+    assert calls == ["run"]
+    assert os.environ["PYMUTANT_PROJECT_ROOT"] == str(tmp_path)
