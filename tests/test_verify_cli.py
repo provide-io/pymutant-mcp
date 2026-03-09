@@ -30,6 +30,12 @@ def test_verify_main_runs_all_steps(monkeypatch) -> None:
         ("==> running ruff: ruff check .", True),
         ("==> running mypy: mypy server/src src/repo_verify", True),
         ("==> running bandit: bandit -q -r server/src/pymutant src/repo_verify -ll", True),
+        (
+            "==> running docs-lint: pymarkdown --config .pymarkdown.json scan README.md AGENTS.md commands skills "
+            "server/README.md docs",
+            True,
+        ),
+        ("==> running docs-links: python scripts/check_markdown_links.py --root .", True),
         ("==> running pytest: pytest -q", True),
         ("verification passed", True),
     ]
@@ -37,6 +43,22 @@ def test_verify_main_runs_all_steps(monkeypatch) -> None:
         (["ruff", "check", "."], False),
         (["mypy", "server/src", "src/repo_verify"], False),
         (["bandit", "-q", "-r", "server/src/pymutant", "src/repo_verify", "-ll"], False),
+        (
+            [
+                "pymarkdown",
+                "--config",
+                ".pymarkdown.json",
+                "scan",
+                "README.md",
+                "AGENTS.md",
+                "commands",
+                "skills",
+                "server/README.md",
+                "docs",
+            ],
+            False,
+        ),
+        (["python", "scripts/check_markdown_links.py", "--root", "."], False),
         (["pytest", "-q"], False),
     ]
 

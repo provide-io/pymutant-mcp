@@ -11,6 +11,22 @@ VERIFY_STEPS: list[tuple[str, list[str]]] = [
     ("ruff", ["ruff", "check", "."]),
     ("mypy", ["mypy", "server/src", "src/repo_verify"]),
     ("bandit", ["bandit", "-q", "-r", "server/src/pymutant", "src/repo_verify", "-ll"]),
+    (
+        "docs-lint",
+        [
+            "pymarkdown",
+            "--config",
+            ".pymarkdown.json",
+            "scan",
+            "README.md",
+            "AGENTS.md",
+            "commands",
+            "skills",
+            "server/README.md",
+            "docs",
+        ],
+    ),
+    ("docs-links", ["python", "scripts/check_markdown_links.py", "--root", "."]),
     ("pytest", ["pytest", "-q"]),
 ]
 

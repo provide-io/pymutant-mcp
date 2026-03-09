@@ -85,15 +85,36 @@ After each run, scores are appended to `mutation-score.json` in the project root
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    U["User"] --> C["Claude/Codex"]
+    C --> S["skills/pymutant/SKILL.md"]
+    C --> M["pymutant MCP Server"]
+    M --> R["runner.py (mutmut run)"]
+    M --> RS["results.py (mutants/*.meta + ledger)"]
+    M --> SC["score.py (mutation-score.json)"]
 ```
-User → Claude Code → Skill (SKILL.md)
-                   → Server (pymutant)
-                       → runner.py      (mutmut run)
-                       → results.py     (mutants/*.meta)
-                       → score.py       (mutation-score.json)
+
+```mermaid
+flowchart TD
+    A["pymutant_run"] --> B{"strict_campaign?"}
+    B -- "yes" --> C["snapshot pending mutants"]
+    C --> D["run next batch"]
+    B -- "no" --> E["run selected batch or full run"]
+    D --> F["record outcomes to ledger"]
+    E --> F
+    F --> G["pymutant_results"]
+    G --> H["pymutant_compute_score"]
+    H --> I["pymutant_update_score_history"]
 ```
 
 The MCP server inherits the current working directory from Claude Code, so all paths are relative to the project you're working in.
+
+## Docs
+
+- `docs/tool-contracts.md`: MCP tool names, contract, and error payload shape.
+- `docs/reporting-artifacts.md`: CI artifacts and the files they contain.
+- `docs/architecture.md`: architecture decisions and mutation run flow.
 
 ## Skill Auto-Activation
 

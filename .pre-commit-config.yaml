@@ -73,6 +73,22 @@ repos:
         always_run: true
         types: [python]
 
+      - id: docs-lint
+        name: markdown lint
+        entry: uv run pymarkdown --config .pymarkdown.json scan README.md AGENTS.md commands skills server/README.md docs
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [text]
+
+      - id: docs-links
+        name: markdown links (local)
+        entry: uv run python scripts/check_markdown_links.py --root .
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [text]
+
       - id: verify
         name: verify
         entry: uv run verify
