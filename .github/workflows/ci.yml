@@ -14,7 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup uv (act)
+        if: ${{ github.actor == 'nektos/act' }}
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Setup uv
+        if: ${{ github.actor != 'nektos/act' }}
         uses: astral-sh/setup-uv@v6
 
       - name: Setup Python
