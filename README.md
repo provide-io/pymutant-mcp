@@ -247,7 +247,7 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - validates `dist/benchmark-throughput.json` against `schemas/benchmark-throughput.schema.json`
   - uploads `benchmark-throughput` artifact (`dist/benchmark-throughput.json`)
 - `mutation_zero_survivors` (PR only):
-  - runs `uv run mutation-gate --changed-only --base-ref origin/<base_branch>`
+  - runs `uv run mutation-gate --changed-only --base-ref origin/<base_branch> --max-seconds 900 --max-interruptions 8`
   - fails PR when survivors remain after configured rounds
   - uploads `mutation-gate` artifact (`dist/mutation-gate.json`)
 - `mutation_benchmark_quality` (schedule/manual):
@@ -291,3 +291,7 @@ act push -W .github/workflows/ci.yml --container-architecture linux/amd64 --cont
 ```
 
 `--container-daemon-socket -` avoids bind-mounting the Docker socket path inside the container when using Colima.
+
+When running under `act` (`ACT=true`), this workflow executes the `verify` job and skips mutation benchmark/build jobs to avoid local QEMU timing variance and PR base-ref fetch issues.
+
+Operator procedures for mutation campaigns, stuck-process recovery, and strict campaign progress are documented in [`docs/operator-runbook.md`](docs/operator-runbook.md).

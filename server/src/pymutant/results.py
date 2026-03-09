@@ -13,6 +13,7 @@ from .ledger import resolve_latest_statuses
 from .mutmut_cmd import mutmut_cmd_prefix
 
 StatusMap: TypeAlias = dict[int | None, str]
+STRICT_CAMPAIGN_FILE = ".pymutant-strict-campaign.json"
 
 # Canonical mutmut 3.5.x exit-code mapping normalized to MCP status names.
 # Source: mutmut.__main__.status_by_exit_code
@@ -43,6 +44,48 @@ def _project_root_or_cwd(project_root: Path | None) -> Path:
 
 def _meta_dir(project_root: Path) -> Path:
     return project_root / "mutants"
+
+
+def _strict_campaign_progress(project_root: Path) -> dict[str, object]:
+    campaign_path = project_root / STRICT_CAMPAIGN_FILE
+    if not campaign_path.exists():
+        return {
+            "exists": False,
+            "valid": False,
+            "path": str(campaign_path),
+            "campaign_total": 0,
+            "campaign_attempted": 0,
+            "campaign_stale": 0,
+            "remaining_not_checked": 0,
+        }
+    try:
+        campaign = json.loads(campaign_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {
+            "exists": True,
+            "valid": False,
+            "path": str(campaign_path),
+            "campaign_total": 0,
+            "campaign_attempted": 0,
+            "campaign_stale": 0,
+            "remaining_not_checked": 0,
+        }
+
+    names = campaign.get("names", [])
+    attempted = set(campaign.get("attempted", []))
+    stale = set(campaign.get("stale", []))
+    if not isinstance(names, list):
+        names = []
+    remaining = len([name for name in names if name not in attempted and name not in stale])
+    return {
+        "exists": True,
+        "valid": True,
+        "path": str(campaign_path),
+        "campaign_total": len(names),
+        "campaign_attempted": len(attempted),
+        "campaign_stale": len(stale),
+        "remaining_not_checked": remaining,
+    }
 
 
 def load_all_meta_files(project_root: Path | None = None) -> dict[str, dict]:
@@ -122,10 +165,24 @@ def get_results(
             }
         )
 
+    campaign = _strict_campaign_progress(root)
+    if bool(campaign["exists"]) and bool(campaign["valid"]):
+        remaining = campaign["remaining_not_checked"]
+        not_checked_effective = int(remaining) if isinstance(remaining, int) else 0
+        progress_source = "strict_campaign"
+    else:
+        not_checked_effective = counts.get("not_checked", 0)
+        progress_source = "meta"
+
     return {
         "mutants": all_mutants,
         "counts": counts,
         "total": sum(counts.values()),
+        "progress": {
+            "source": progress_source,
+            "not_checked_effective": not_checked_effective,
+            "strict_campaign": campaign,
+        },
     }
 
 

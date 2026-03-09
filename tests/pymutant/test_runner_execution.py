@@ -202,6 +202,45 @@ def test_load_not_checked_mutants_ignores_bad_json(tmp_path: Path) -> None:
     assert runner._load_not_checked_mutants(tmp_path) == []
 
 
+def test_sanitize_mutant_meta_files(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    good = meta_dir / "good.meta"
+    bad = meta_dir / "bad.meta"
+    good.write_text('{"exit_code_by_key":{"a":1}}')
+    bad.write_text("{")
+
+    summary = runner._sanitize_mutant_meta_files(tmp_path)
+
+    assert summary["scanned"] == 2
+    assert summary["invalid_removed"] == 1
+    assert str(bad) in summary["removed_paths"]
+    assert good.exists()
+    assert not bad.exists()
+
+
+def test_sanitize_mutant_meta_files_unlink_error(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    bad = meta_dir / "bad.meta"
+    bad.write_text("{")
+
+    original_unlink = Path.unlink
+
+    def fake_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self == bad:
+            raise OSError("nope")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+    summary = runner._sanitize_mutant_meta_files(tmp_path)
+
+    assert summary["scanned"] == 1
+    assert summary["invalid_removed"] == 0
+    assert summary["removed_paths"] == []
+    assert bad.exists()
+
+
 def test_select_batch_names_empty(tmp_path: Path) -> None:
     runner._PENDING_CURSOR_BY_ROOT.clear()
     assert runner._select_batch_names([], tmp_path, 2) == []

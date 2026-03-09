@@ -204,6 +204,18 @@ def test_run_quality_benchmark_cold_start_interruption_retry(monkeypatch, tmp_pa
 
 
 def test_run_quality_benchmark_collects_failures(monkeypatch, tmp_path: Path) -> None:
+    class _SensitiveCounts(dict[str, int]):
+        def get(self, key, default=None):  # type: ignore[override]
+            if key == "timeout":
+                return 10 if default == 0 else default
+            if key == "segfault":
+                if default == 0:
+                    return 20
+                if default == 1:
+                    return 1
+                return default
+            return super().get(key, default)
+
     monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
     monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
     monkeypatch.setattr(
@@ -216,7 +228,7 @@ def test_run_quality_benchmark_collects_failures(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(
         benchmark.results,
         "get_results",
-        lambda **_kwargs: {"counts": {"timeout": 10, "segfault": 20}},
+        lambda **_kwargs: {"counts": _SensitiveCounts()},
     )
     monkeypatch.setattr(benchmark.time, "monotonic", lambda: 1000.0)
 
@@ -231,12 +243,77 @@ def test_run_quality_benchmark_collects_failures(monkeypatch, tmp_path: Path) ->
         max_duration_seconds=0.1,
         min_checked_mutants=0,
     )
-    assert any("nonzero returncode" in item for item in failures)
-    assert any("campaign incomplete" in item for item in failures)
-    assert any("hit max_iterations" in item for item in failures)
-    assert any("score below floor" in item for item in failures)
-    assert any("timeout budget exceeded" in item for item in failures)
-    assert any("segfault budget exceeded" in item for item in failures)
+    assert "nonzero returncode: 2" in failures
+    assert "campaign incomplete: remaining_not_checked=3" in failures
+    assert "hit max_iterations=1" in failures
+    assert "score below floor: 0.1 < 0.2" in failures
+    assert "timeout budget exceeded: 10 > 1" in failures
+    assert "segfault budget exceeded: 20 > 1" in failures
+
+
+def test_run_quality_benchmark_duration_equal_limit_not_failure(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        benchmark.runner,
+        "run_mutations",
+        lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
+    )
+    monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
+    monkeypatch.setattr(
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0},
+    )
+    monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
+    ticks = iter([100.0, 100.5])
+    monkeypatch.setattr(benchmark.time, "monotonic", lambda: next(ticks))
+
+    _metrics, failures = benchmark.run_quality_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_iterations=10,
+        score_floor=0.0,
+        max_timeout=1,
+        max_segfault=1,
+        max_duration_seconds=0.5,
+        min_checked_mutants=1,
+    )
+    assert not any("duration budget exceeded" in item for item in failures)
+
+
+def test_run_quality_benchmark_restores_batch_with_previous_value(monkeypatch, tmp_path: Path) -> None:
+    restored: list[str | None] = []
+    monkeypatch.setattr(benchmark, "_set_batch_size", lambda _batch_size: "17")
+    monkeypatch.setattr(benchmark, "_restore_batch_size", lambda previous: restored.append(previous))
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        benchmark.runner,
+        "run_mutations",
+        lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
+    )
+    monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
+    monkeypatch.setattr(
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0},
+    )
+    monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
+
+    benchmark.run_quality_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_iterations=10,
+        score_floor=0.0,
+        max_timeout=1,
+        max_segfault=1,
+        max_duration_seconds=999.0,
+        min_checked_mutants=1,
+    )
+    assert restored == ["17"]
 
 
 def test_run_quality_benchmark_interrupted_with_progress_not_failure(monkeypatch, tmp_path: Path) -> None:
@@ -386,15 +463,111 @@ def test_run_throughput_benchmark_failures(monkeypatch, tmp_path: Path) -> None:
         max_noop_call_seconds=1.0,
         max_total_seconds=5.0,
     )
-    assert any("first strict run failed" in item for item in failures)
-    assert any("did not mark stale" in item for item in failures)
-    assert any("noop strict run failed" in item for item in failures)
-    assert any("was not no-op" in item for item in failures)
-    assert any("unexpectedly has remaining_not_checked" in item for item in failures)
-    assert any("unexpected noop summary" in item for item in failures)
-    assert any("first call too slow" in item for item in failures)
-    assert any("noop call too slow" in item for item in failures)
-    assert any("total runtime too slow" in item for item in failures)
+    assert failures == [
+        "first strict run failed: 1",
+        "first strict run did not mark stale selector",
+        "noop strict run failed: 2",
+        "noop strict run was not no-op batch_size=1",
+        "noop strict run unexpectedly has remaining_not_checked=1",
+        "unexpected noop summary: x",
+        "first call too slow: 10.0 > 1.0",
+        "noop call too slow: 10.0 > 1.0",
+        "total runtime too slow: 20.0 > 5.0",
+    ]
+
+
+def test_run_throughput_benchmark_writes_strict_campaign_seed(monkeypatch, tmp_path: Path) -> None:
+    def fake_run_mutations(**kwargs):  # type: ignore[no-untyped-def]
+        strict_path = tmp_path / benchmark.runner.STRICT_CAMPAIGN_FILE
+        payload = json.loads(strict_path.read_text())
+        assert payload == {"names": ["pymutant.__benchmark__mutmut_0"], "stale": [], "attempted": []}
+        assert strict_path.read_text().endswith("\n")
+        assert kwargs["strict_campaign"] is True
+        return {
+            "returncode": 0,
+            "campaign_stale": 1,
+            "batch_size": 0,
+            "remaining_not_checked": 0,
+            "summary": "strict campaign complete; nothing to run",
+        }
+
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.runner, "run_mutations", fake_run_mutations)
+
+    _metrics, failures = benchmark.run_throughput_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_first_call_seconds=999.0,
+        max_noop_call_seconds=999.0,
+        max_total_seconds=999.0,
+    )
+    assert failures == []
+
+
+def test_run_throughput_benchmark_passes_exact_kwargs(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_reset_strict_campaign(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"reset": kwargs})
+        return True
+
+    def fake_run_mutations(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        if len([c for c in calls if "strict_campaign" in c]) == 1:
+            return {"returncode": 0, "campaign_stale": 1}
+        return {
+            "returncode": 0,
+            "batch_size": 0,
+            "remaining_not_checked": 0,
+            "summary": "strict campaign complete; nothing to run",
+        }
+
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", fake_reset_strict_campaign)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.runner, "run_mutations", fake_run_mutations)
+
+    _metrics, failures = benchmark.run_throughput_benchmark(
+        project_root=tmp_path,
+        batch_size=7,
+        max_children=3,
+        max_first_call_seconds=999.0,
+        max_noop_call_seconds=999.0,
+        max_total_seconds=999.0,
+    )
+    assert failures == []
+    assert calls[0] == {"reset": {"project_root": tmp_path}}
+    assert calls[1] == {"max_children": 3, "strict_campaign": True, "project_root": tmp_path}
+    assert calls[2] == {"max_children": 3, "strict_campaign": True, "project_root": tmp_path}
+
+
+def test_run_throughput_benchmark_reports_missing_batch_size_default(monkeypatch, tmp_path: Path) -> None:
+    calls = {"n": 0}
+
+    def fake_run_mutations(**_kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"returncode": 0, "campaign_stale": 1}
+        return {
+            "returncode": 0,
+            "remaining_not_checked": 0,
+            "summary": "strict campaign complete; nothing to run",
+        }
+
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.runner, "run_mutations", fake_run_mutations)
+
+    _metrics, failures = benchmark.run_throughput_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_first_call_seconds=999.0,
+        max_noop_call_seconds=999.0,
+        max_total_seconds=999.0,
+    )
+    assert "noop strict run was not no-op batch_size=None" in failures
 
 
 def test_print_failures(capsys) -> None:

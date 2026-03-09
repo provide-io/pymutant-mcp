@@ -115,7 +115,7 @@ repos:
 
       - id: mutation-sweep
         name: mutation sweep zero-survivor (manual)
-        entry: uv run mutation-sweep --max-rounds 4 --json-out dist/mutation-gate.json
+        entry: uv run mutation-sweep --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
         language: system
         pass_filenames: false
         always_run: true

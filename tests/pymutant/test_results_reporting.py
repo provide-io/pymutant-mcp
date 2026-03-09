@@ -107,6 +107,56 @@ def test_get_results_can_disable_ledger(monkeypatch, tmp_path: Path) -> None:
     assert data["counts"]["not_checked"] == 1
 
 
+def test_get_results_progress_uses_strict_campaign(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "mod.meta").write_text(
+        json.dumps({"exit_code_by_key": {"src.pkg.mod.a__mutmut_1": None}, "durations_by_key": {}})
+    )
+    (tmp_path / ".pymutant-strict-campaign.json").write_text(
+        json.dumps({"names": ["a", "b", "c"], "attempted": ["a"], "stale": ["b"]})
+    )
+    data = results.get_results(include_killed=True, project_root=tmp_path)
+    assert data["progress"]["source"] == "strict_campaign"
+    assert data["progress"]["not_checked_effective"] == 1
+    strict = data["progress"]["strict_campaign"]
+    assert strict["exists"] is True
+    assert strict["valid"] is True
+    assert strict["remaining_not_checked"] == 1
+
+
+def test_get_results_progress_falls_back_for_invalid_campaign(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "mod.meta").write_text(
+        json.dumps({"exit_code_by_key": {"src.pkg.mod.a__mutmut_1": None}, "durations_by_key": {}})
+    )
+    (tmp_path / ".pymutant-strict-campaign.json").write_text("{bad")
+    data = results.get_results(include_killed=True, project_root=tmp_path)
+    assert data["progress"]["source"] == "meta"
+    assert data["progress"]["not_checked_effective"] == 1
+    strict = data["progress"]["strict_campaign"]
+    assert strict["exists"] is True
+    assert strict["valid"] is False
+
+
+def test_get_results_progress_handles_malformed_campaign_shape(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "mod.meta").write_text(
+        json.dumps({"exit_code_by_key": {"src.pkg.mod.a__mutmut_1": None}, "durations_by_key": {}})
+    )
+    (tmp_path / ".pymutant-strict-campaign.json").write_text(
+        json.dumps({"names": "not-a-list", "attempted": ["a"], "stale": []})
+    )
+    data = results.get_results(include_killed=True, project_root=tmp_path)
+    strict = data["progress"]["strict_campaign"]
+    assert strict["exists"] is True
+    assert strict["valid"] is True
+    assert strict["campaign_total"] == 0
+    assert data["progress"]["not_checked_effective"] == 0
+
+
 def test_get_mutant_diff_success(monkeypatch, tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 

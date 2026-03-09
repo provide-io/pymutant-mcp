@@ -30,8 +30,13 @@ def _run(data: Path, schema: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _can_run_script_integration() -> bool:
+    root = Path(__file__).resolve().parents[2]
+    return (root / "scripts" / "validate_json_schema.py").exists()
+
+
 def test_validate_profiles_schema(tmp_path: Path) -> None:
-    if os.environ.get("MUTANT_UNDER_TEST"):
+    if os.environ.get("MUTANT_UNDER_TEST") or not _can_run_script_integration():
         pytest.skip("schema script integration test requires repository scripts path")
     data = tmp_path / "profiles.json"
     data.write_text(json.dumps({"schema_version": "1.0", "profiles": {"default": {}}}))
@@ -41,7 +46,7 @@ def test_validate_profiles_schema(tmp_path: Path) -> None:
 
 
 def test_validate_schema_failure(tmp_path: Path) -> None:
-    if os.environ.get("MUTANT_UNDER_TEST"):
+    if os.environ.get("MUTANT_UNDER_TEST") or not _can_run_script_integration():
         pytest.skip("schema script integration test requires repository scripts path")
     data = tmp_path / "bad.json"
     data.write_text(json.dumps({"profiles": {}}))
@@ -50,7 +55,7 @@ def test_validate_schema_failure(tmp_path: Path) -> None:
 
 
 def test_validate_repo_schemas_script() -> None:
-    if os.environ.get("MUTANT_UNDER_TEST"):
+    if os.environ.get("MUTANT_UNDER_TEST") or not _can_run_script_integration():
         pytest.skip("schema script integration test requires repository scripts path")
     root = Path(__file__).resolve().parents[2]
     result = subprocess.run(

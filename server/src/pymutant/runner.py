@@ -42,6 +42,12 @@ class StrictCampaign(TypedDict):
     attempted: list[str]
 
 
+class MetaSanitizeSummary(TypedDict):
+    scanned: int
+    invalid_removed: int
+    removed_paths: list[str]
+
+
 def _project_root_or_cwd(project_root: Path | None) -> Path:
     return project_root if project_root is not None else Path(os.getcwd())
 
@@ -154,6 +160,30 @@ def _load_not_checked_mutants(root: Path) -> list[str]:
             if exit_code is None:
                 names.append(name)
     return sorted(names)
+
+
+def _sanitize_mutant_meta_files(root: Path) -> MetaSanitizeSummary:
+    meta_dir = root / "mutants"
+    summary: MetaSanitizeSummary = {
+        "scanned": 0,
+        "invalid_removed": 0,
+        "removed_paths": [],
+    }
+    if not meta_dir.exists():
+        return summary
+
+    for meta_file in meta_dir.rglob("*.meta"):
+        summary["scanned"] += 1
+        try:
+            json.loads(meta_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            try:
+                meta_file.unlink()
+            except OSError:
+                continue
+            summary["invalid_removed"] += 1
+            summary["removed_paths"].append(str(meta_file))
+    return summary
 
 
 def _strict_campaign_path(root: Path) -> Path:
@@ -434,6 +464,7 @@ def run_mutations(
 ) -> dict:
     """Run `mutmut run` and return structured output."""
     root = _project_root_or_cwd(project_root)
+    sanitize = _sanitize_mutant_meta_files(root)
     cmd_prefix = _mutmut_cmd_prefix(root)
     preflight_error = _dependency_preflight(root, cmd_prefix)
     if preflight_error:
@@ -442,6 +473,7 @@ def run_mutations(
             "stdout": "",
             "stderr": preflight_error,
             "summary": "dependency preflight failed",
+            "meta_sanitize": sanitize,
         }
 
     pending_names: list[str] = []
@@ -462,6 +494,7 @@ def run_mutations(
                 "stderr": changed_error,
                 "summary": "changed file detection failed",
                 "changed_only": True,
+                "meta_sanitize": sanitize,
             }
         if not changed_paths:
             return {
@@ -475,6 +508,7 @@ def run_mutations(
                 "remaining_not_checked": 0,
                 "changed_only": True,
                 "changed_paths": [],
+                "meta_sanitize": sanitize,
             }
         cmd.extend(changed_paths)
         strict_campaign = False
@@ -495,6 +529,7 @@ def run_mutations(
                     "campaign_attempted": len(strict_campaign_state["attempted"]),
                     "campaign_stale": len(strict_campaign_state["stale"]),
                     "remaining_not_checked": 0,
+                    "meta_sanitize": sanitize,
                 }
             batch_names = pending_names[: _batch_size()]
             cmd.extend(batch_names)
@@ -607,6 +642,7 @@ def run_mutations(
     result["changed_only"] = changed_only
     if changed_only:
         result["changed_paths"] = changed_paths
+    result["meta_sanitize"] = sanitize
     return result
 
 

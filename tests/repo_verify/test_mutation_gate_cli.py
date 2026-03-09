@@ -96,7 +96,15 @@ def test_run_mutation_gate_seed_failure(monkeypatch, tmp_path: Path) -> None:
 def test_run_mutation_gate_interruption_cleanup(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
     monkeypatch.setattr(mutation_gate, "_survivor_names", lambda _root: [])
-    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": -15, "summary": "run"})
+    calls = {"n": 0}
+
+    def fake_run(**_kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"returncode": -15, "summary": "run"}
+        return {"returncode": 0, "summary": "ok"}
+
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", fake_run)
     monkeypatch.setattr(mutation_gate.runner, "kill_stuck_mutmut", lambda **_kwargs: {"ok": True})
 
     payload, failures = mutation_gate.run_mutation_gate(
@@ -110,13 +118,18 @@ def test_run_mutation_gate_interruption_cleanup(monkeypatch, tmp_path: Path) -> 
     )
     assert failures == []
     assert payload["seed_cleanup"] == {"ok": True}
+    assert payload["interruptions"] == 1
 
 
 def test_run_mutation_gate_no_progress(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    state = {"n": 0}
 
     def fake_survivors(_root: Path) -> list[str]:
-        return ["m1"]
+        state["n"] += 1
+        if state["n"] == 1:
+            return ["m1"]
+        return ["m1", "m2"]
 
     monkeypatch.setattr(mutation_gate, "_survivor_names", fake_survivors)
     monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": 0, "summary": "ok"})
@@ -130,8 +143,8 @@ def test_run_mutation_gate_no_progress(monkeypatch, tmp_path: Path) -> None:
         base_ref=None,
         reset_state=False,
     )
-    assert any("no progress" in x for x in failures)
-    assert payload["final_survivors"] == 1
+    assert "no progress in round 1: 1 -> 2" in failures
+    assert payload["final_survivors"] == 2
 
 
 def test_run_mutation_gate_zero_rounds(monkeypatch, tmp_path: Path) -> None:
@@ -170,7 +183,9 @@ def test_run_mutation_gate_batch_interruption(monkeypatch, tmp_path: Path) -> No
         calls["n"] += 1
         if calls["n"] == 1:
             return {"returncode": 0, "summary": "seed"}
-        return {"returncode": -15, "summary": "batch"}
+        if calls["n"] == 2:
+            return {"returncode": -15, "summary": "batch"}
+        return {"returncode": 0, "summary": "batch-ok"}
 
     monkeypatch.setattr(mutation_gate.runner, "run_mutations", fake_run)
     monkeypatch.setattr(mutation_gate.runner, "kill_stuck_mutmut", lambda **_kwargs: {"ok": True})
@@ -187,6 +202,167 @@ def test_run_mutation_gate_batch_interruption(monkeypatch, tmp_path: Path) -> No
     assert failures == []
     batch = payload["rounds"][0]["batches"][0]
     assert batch["cleanup"] == {"ok": True}
+    assert payload["interruptions"] == 1
+
+
+def test_run_mutation_gate_seed_interrupted_beyond_budget(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate, "_survivor_names", lambda _root: [])
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": -15, "summary": "run"})
+    monkeypatch.setattr(mutation_gate.runner, "kill_stuck_mutmut", lambda **_kwargs: {"ok": True})
+
+    _payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=1,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+        max_interruptions=0,
+    )
+    assert failures == ["seed run interrupted beyond retry budget"]
+
+
+def test_run_mutation_gate_time_budget_before_round(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": 0, "summary": "ok"})
+    monkeypatch.setattr(mutation_gate, "_survivor_names", lambda _root: ["m1"])
+    times = iter([0.0, 2.0, 2.0])
+    monkeypatch.setattr(mutation_gate.time, "monotonic", lambda: next(times))
+    payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=1,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+        max_seconds=1.0,
+    )
+    assert payload["rounds"] == []
+    assert failures == ["time budget exceeded before round 1: 1.0s", "survivors remain: 1"]
+
+
+def test_run_mutation_gate_time_budget_in_round(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": 0, "summary": "ok"})
+
+    state = {"n": 0}
+
+    def fake_survivors(_root: Path) -> list[str]:
+        state["n"] += 1
+        if state["n"] == 1:
+            return ["m1"]
+        return []
+
+    monkeypatch.setattr(mutation_gate, "_survivor_names", fake_survivors)
+    times = iter([0.0, 0.0, 2.0, 2.0, 2.0])
+    monkeypatch.setattr(mutation_gate.time, "monotonic", lambda: next(times))
+    payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=2,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+        max_seconds=1.0,
+    )
+    assert payload["rounds"][0]["survivors_after"] == 0
+    assert failures == ["time budget exceeded in round 1: 1.0s"]
+
+
+def test_run_mutation_gate_batch_interrupted_beyond_budget(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate.runner, "kill_stuck_mutmut", lambda **_kwargs: {"ok": True})
+
+    state = {"n": 0}
+
+    def fake_survivors(_root: Path) -> list[str]:
+        state["n"] += 1
+        if state["n"] == 1:
+            return ["m1"]
+        return []
+
+    monkeypatch.setattr(mutation_gate, "_survivor_names", fake_survivors)
+
+    calls = {"n": 0}
+
+    def fake_run(**_kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"returncode": 0, "summary": "seed"}
+        return {"returncode": -15, "summary": "batch"}
+
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", fake_run)
+    _payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=1,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+        max_interruptions=0,
+    )
+    assert failures == ["batch interruption beyond retry budget in round 1"]
+
+
+def test_run_mutation_gate_repeated_survivor_set(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": 0, "summary": "ok"})
+    state = {"n": 0}
+
+    def fake_survivors(_root: Path) -> list[str]:
+        state["n"] += 1
+        if state["n"] == 1:
+            return ["a", "b"]
+        if state["n"] == 2:
+            return ["a"]
+        return ["a", "b"]
+
+    monkeypatch.setattr(mutation_gate, "_survivor_names", fake_survivors)
+    payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=3,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+    )
+    assert "survivor set repeated before round 2: 2" in failures
+    assert payload["rounds"][0]["survivors_after"] == 1
+
+
+def test_run_mutation_gate_repeated_survivor_set_after_round(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(mutation_gate.runner, "reset_strict_campaign", lambda **_kwargs: False)
+    monkeypatch.setattr(mutation_gate.runner, "run_mutations", lambda **_kwargs: {"returncode": 0, "summary": "ok"})
+    state = {"n": 0}
+
+    def fake_survivors(_root: Path) -> list[str]:
+        state["n"] += 1
+        if state["n"] == 1:
+            return ["a", "b"]  # round1 before
+        if state["n"] == 2:
+            return ["x"]  # round1 after
+        if state["n"] == 3:
+            return ["y"]  # round2 before
+        return ["a", "b"]  # round2 after repeats round1-before signature
+
+    monkeypatch.setattr(mutation_gate, "_survivor_names", fake_survivors)
+    payload, failures = mutation_gate.run_mutation_gate(
+        project_root=tmp_path,
+        batch_size=1,
+        max_rounds=3,
+        max_children=1,
+        changed_only=False,
+        base_ref=None,
+        reset_state=False,
+    )
+    assert "survivor set repeated in round 2: 2" in failures
+    assert payload["rounds"][1]["survivors_after"] == 2
 
 
 def test_print_failures(capsys) -> None:
