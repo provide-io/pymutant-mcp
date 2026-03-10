@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  verify:
+  quality:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -53,10 +53,39 @@ jobs:
       - name: MCP smoke
         run: uv run mcp-smoke --project-root . --base-ref HEAD
 
+  compliance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv (act)
+        if: ${{ github.actor == 'nektos/act' }}
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Setup uv
+        if: ${{ github.actor != 'nektos/act' }}
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: REUSE lint
+        run: uvx reuse lint
+
+      - name: Codespell
+        run: uv run codespell
+
   mutation_benchmark_throughput:
     if: ${{ github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [quality, compliance]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,10 +114,10 @@ jobs:
           name: benchmark-throughput
           path: dist/benchmark-throughput.json
 
-  mutation_zero_survivors:
+  mutation-gate:
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [quality, compliance]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -122,7 +151,7 @@ jobs:
   mutation_benchmark_quality:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [quality, compliance]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,7 +209,7 @@ jobs:
   build:
     if: ${{ github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest
-    needs: [verify, mutation_benchmark_throughput]
+    needs: [quality, compliance, mutation_benchmark_throughput]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
