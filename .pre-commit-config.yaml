@@ -9,7 +9,7 @@ repos:
     rev: v0.15.2
     hooks:
       - id: ruff-check
-        args: [--fix]
+        args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
   - repo: https://github.com/fsfe/reuse-tool
@@ -49,6 +49,15 @@ repos:
         always_run: true
         types: [python]
 
+      - id: spdx-header-normalize
+        name: python spdx header normalize (manual)
+        entry: uv run python scripts/normalize_spdx_headers.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+        types: [python]
+
       - id: mypy
         name: mypy strict
         entry: uv run mypy server/src src/repo_verify
@@ -68,6 +77,14 @@ repos:
       - id: bandit
         name: bandit
         entry: uv run bandit -r server/src/pymutant src/repo_verify -ll
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: pytest
+        name: pytest
+        entry: uv run pytest -q
         language: system
         pass_filenames: false
         always_run: true
