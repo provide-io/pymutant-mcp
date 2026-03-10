@@ -220,6 +220,47 @@ def _attach_common_result_fields(
     return result
 
 
+def _normalize_changed_only_selector_miss(
+    *,
+    result: dict[str, Any],
+    changed_only: bool,
+    changed_paths: list[str],
+) -> dict[str, Any]:
+    stale_filter = "Filtered for specific mutants, but nothing matches"
+    if not changed_only:
+        return result
+    if not isinstance(result.get("returncode"), int):
+        return result
+    if result["returncode"] == 0:
+        return result
+    if stale_filter not in str(result.get("stderr", "")):
+        return result
+    return {
+        **_noop_payload("no matching mutants for changed selectors", strict_campaign=False, changed_only=True),
+        "changed_paths": changed_paths,
+    }
+
+
+def _mark_strict_campaign_attempted(
+    *,
+    root: Path,
+    result: dict[str, Any],
+    strict_campaign: bool,
+    strict_campaign_state: Any,
+    batch_names: list[str],
+) -> None:
+    if not (
+        strict_campaign
+        and strict_campaign_state is not None
+        and batch_names
+        and isinstance(result.get("returncode"), int)
+        and result["returncode"] != -1
+    ):
+        return
+    strict_campaign_state["attempted"] = sorted(set(strict_campaign_state["attempted"]).union(batch_names))
+    _save_strict_campaign(root, strict_campaign_state)
+
+
 def run_mutations(
     paths: list[str] | None = None,
     max_children: int | None = None,
@@ -274,27 +315,15 @@ def run_mutations(
     _apply_max_children(cmd, batch_names=batch_names, max_children=max_children)
     print(f"Running: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
     result = _run_cmd(cmd, root)
-    stale_filter = "Filtered for specific mutants, but nothing matches"
-    if (
-        changed_only
-        and isinstance(result.get("returncode"), int)
-        and result["returncode"] != 0
-        and stale_filter in str(result.get("stderr", ""))
-    ):
-        result = {
-            **_noop_payload("no matching mutants for changed selectors", strict_campaign=False, changed_only=True),
-            "changed_paths": changed_paths,
-        }
+    result = _normalize_changed_only_selector_miss(result=result, changed_only=changed_only, changed_paths=changed_paths)
 
-    if (
-        strict_campaign
-        and strict_campaign_state is not None
-        and batch_names
-        and isinstance(result.get("returncode"), int)
-        and result["returncode"] != -1
-    ):
-        strict_campaign_state["attempted"] = sorted(set(strict_campaign_state["attempted"]).union(batch_names))
-        _save_strict_campaign(root, strict_campaign_state)
+    _mark_strict_campaign_attempted(
+        root=root,
+        result=result,
+        strict_campaign=strict_campaign,
+        strict_campaign_state=strict_campaign_state,
+        batch_names=batch_names,
+    )
 
     stale_marked, result, strict_campaign_state = _maybe_mark_strict_stale(
         root=root,

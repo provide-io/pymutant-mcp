@@ -126,7 +126,7 @@ flowchart LR
     U["User"] --> C["Claude/Codex"]
     C --> S["skills/pymutant/SKILL.md"]
     C --> M["pymutant MCP Server"]
-    M --> R["runner.py (mutmut run)"]
+    M --> R["runner/api.py + runner/helpers.py (mutmut run)"]
     M --> RS["results.py (mutants/*.meta + ledger)"]
     M --> SC["score.py (mutation-score.json)"]
 ```

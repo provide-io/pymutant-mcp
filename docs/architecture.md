@@ -7,7 +7,8 @@
 
 ## Core Modules
 
-- `server/src/pymutant/runner.py`: mutation execution, batching, strict campaign handling, subprocess resilience.
+- `server/src/pymutant/runner/api.py`: mutation execution entrypoints, batching orchestration, strict campaign flow.
+- `server/src/pymutant/runner/helpers.py`: subprocess control, changed-only path resolution, strict campaign persistence/helpers.
 - `server/src/pymutant/results.py`: reads mutmut metadata and maps exit codes to statuses.
 - `server/src/pymutant/ledger.py`: append-only per-mutant outcome ledger.
 - `server/src/pymutant/score.py`: mutation score calculation and history handling.
@@ -18,6 +19,6 @@
 
 1. A client calls a `pymutant_*` tool.
 2. The server resolves project root and validates dependencies.
-3. `runner.py` executes batched or explicit mutmut runs.
+3. `runner/api.py` (with `runner/helpers.py`) executes batched or explicit mutmut runs.
 4. Results are normalized, then persisted to ledger/history.
 5. Tool responses return structured data for downstream automation.
