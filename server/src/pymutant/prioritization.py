@@ -19,7 +19,7 @@ def _project_root_or_cwd(project_root: Path | None) -> Path:
 def _file_churn(root: Path, source_file: str) -> float:
     try:
         result = subprocess.run(  # noqa: S603  # nosec
-            ["git", "log", "--oneline", "--", source_file],
+            ["git", "log", "--oneline", "--", source_file],  # noqa: S607
             cwd=str(root),
             capture_output=True,
             text=True,

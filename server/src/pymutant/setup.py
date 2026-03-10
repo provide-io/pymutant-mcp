@@ -8,6 +8,7 @@ import shutil
 import subprocess  # nosec B404
 import tomllib
 from pathlib import Path
+from typing import Any
 
 
 def _project_root_or_cwd(project_root: Path | str | None) -> Path:
@@ -16,7 +17,7 @@ def _project_root_or_cwd(project_root: Path | str | None) -> Path:
     return Path(project_root)
 
 
-def _read_pyproject(root: Path) -> dict:
+def _read_pyproject(root: Path) -> dict[str, Any]:
     pp = root / "pyproject.toml"
     if not pp.exists():
         return {}
@@ -36,7 +37,7 @@ def _mutmut_version(root: Path) -> str | None:
         if not exe or not Path(exe).exists():
             continue
         try:
-            r = subprocess.run(  # noqa: S603,S607  # nosec
+            r = subprocess.run(  # noqa: S603  # nosec
                 [exe, "--version"],
                 capture_output=True,
                 text=True,
@@ -105,7 +106,7 @@ _MONOREPO_KEY_MISMATCH_NOTE = (
 )
 
 
-def detect_layout(project_root: Path | None = None) -> dict:
+def detect_layout(project_root: Path | None = None) -> dict[str, Any]:
     """Detect project layout and return a suggested mutmut configuration."""
     root = _project_root_or_cwd(project_root)
     test_dirs = _find_test_dirs(root)
@@ -153,13 +154,7 @@ def detect_layout(project_root: Path | None = None) -> dict:
     }
 
 
-def check_setup(project_root: Path | None = None) -> dict:
-    """Run pre-flight checks for mutmut readiness on the project."""
-    root = _project_root_or_cwd(project_root)
-    pyproject = _read_pyproject(root)
-    cfg = pyproject.get("tool", {}).get("mutmut", {})
-    checks: list[dict] = []
-
+def _append_base_checks(checks: list[dict[str, Any]], root: Path, cfg: dict[str, Any]) -> None:
     version = _mutmut_version(root)
     checks.append(
         {
@@ -168,7 +163,6 @@ def check_setup(project_root: Path | None = None) -> dict:
             "detail": version or "not found — install: uv add --dev mutmut",
         }
     )
-
     pp_exists = (root / "pyproject.toml").exists()
     checks.append(
         {
@@ -177,7 +171,6 @@ def check_setup(project_root: Path | None = None) -> dict:
             "detail": "present" if pp_exists else "missing",
         }
     )
-
     checks.append(
         {
             "name": "mutmut_config_exists",
@@ -186,80 +179,89 @@ def check_setup(project_root: Path | None = None) -> dict:
         }
     )
 
-    layout = detect_layout(root)["layout"]
 
-    if cfg:
-        paths, paths_note = _normalize_to_list(cfg.get("paths_to_mutate", []))
-        tests, tests_note = _normalize_to_list(cfg.get("tests_dir", []))
-
+def _append_config_checks(checks: list[dict[str, Any]], root: Path, cfg: dict[str, Any]) -> None:
+    paths, paths_note = _normalize_to_list(cfg.get("paths_to_mutate", []))
+    tests, tests_note = _normalize_to_list(cfg.get("tests_dir", []))
+    checks.append(
+        {
+            "name": "paths_to_mutate_valid_type",
+            "ok": paths is not None,
+            "detail": paths_note or "ok",
+        }
+    )
+    checks.append(
+        {
+            "name": "tests_dir_valid_type",
+            "ok": tests is not None,
+            "detail": tests_note or "ok",
+        }
+    )
+    if paths is not None:
+        missing = [p for p in paths if not (root / p).exists()]
         checks.append(
             {
-                "name": "paths_to_mutate_valid_type",
-                "ok": paths is not None,
-                "detail": paths_note or "ok",
+                "name": "paths_to_mutate_exist",
+                "ok": not missing,
+                "detail": "all exist" if not missing else f"missing: {missing}",
             }
         )
+        if any("packages" in p for p in paths):
+            checks.append(
+                {
+                    "name": "no_monorepo_key_mismatch",
+                    "ok": False,
+                    "detail": (
+                        "paths_to_mutate contains 'packages/' paths — mutmut key derivation "
+                        "will not match trampoline module names. Use src/ symlinks instead. "
+                        "Run pymutant_detect_layout for the full explanation."
+                    ),
+                }
+            )
+    if tests is not None:
+        missing_t = [t for t in tests if not (root / t).exists()]
         checks.append(
             {
-                "name": "tests_dir_valid_type",
-                "ok": tests is not None,
-                "detail": tests_note or "ok",
+                "name": "tests_dir_exist",
+                "ok": not missing_t,
+                "detail": "all exist" if not missing_t else f"missing: {missing_t}",
             }
         )
 
-        if paths is not None:
-            missing = [p for p in paths if not (root / p).exists()]
-            checks.append(
-                {
-                    "name": "paths_to_mutate_exist",
-                    "ok": not missing,
-                    "detail": "all exist" if not missing else f"missing: {missing}",
-                }
-            )
-            has_packages_path = any("packages" in p for p in paths)
-            if has_packages_path:
-                checks.append(
-                    {
-                        "name": "no_monorepo_key_mismatch",
-                        "ok": False,
-                        "detail": (
-                            "paths_to_mutate contains 'packages/' paths — mutmut key derivation "
-                            "will not match trampoline module names. Use src/ symlinks instead. "
-                            "Run pymutant_detect_layout for the full explanation."
-                        ),
-                    }
-                )
 
-        if tests is not None:
-            missing_t = [t for t in tests if not (root / t).exists()]
-            checks.append(
-                {
-                    "name": "tests_dir_exist",
-                    "ok": not missing_t,
-                    "detail": "all exist" if not missing_t else f"missing: {missing_t}",
-                }
-            )
-
+def _guard_check(root: Path, layout: str) -> dict[str, Any]:
     conftest = root / "conftest.py"
     guard_required = layout == "monorepo"
     guard_ok = conftest.exists() and "MUTANT_UNDER_TEST" in conftest.read_text()
-    checks.append(
-        {
-            "name": "conftest_mutant_guard",
-            "ok": (not guard_required) or guard_ok,
-            "detail": (
-                "not required for detected layout"
-                if not guard_required
-                else (
-                    "present"
-                    if guard_ok
-                    else (
-                        "conftest.py missing or lacks MUTANT_UNDER_TEST sys.path guard "
-                        "(needed for monorepo/editable-install projects — run pymutant_init with with_conftest=True)"
-                    )
-                )
-            ),
-        }
-    )
+    detail = "not required for detected layout"
+    if guard_required:
+        detail = (
+            "present"
+            if guard_ok
+            else (
+                "conftest.py missing or lacks MUTANT_UNDER_TEST sys.path guard "
+                "(needed for monorepo/editable-install projects — run pymutant_init with with_conftest=True)"
+            )
+        )
+    return {
+        "name": "conftest_mutant_guard",
+        "ok": (not guard_required) or guard_ok,
+        "detail": detail,
+    }
+
+
+def check_setup(project_root: Path | None = None) -> dict[str, Any]:
+    """Run pre-flight checks for mutmut readiness on the project."""
+    root = _project_root_or_cwd(project_root)
+    pyproject = _read_pyproject(root)
+    cfg = pyproject.get("tool", {}).get("mutmut", {})
+    checks: list[dict[str, Any]] = []
+    _append_base_checks(checks, root, cfg)
+
+    layout = detect_layout(root)["layout"]
+
+    if cfg:
+        _append_config_checks(checks, root, cfg)
+    checks.append(_guard_check(root, layout))
 
     return {"ok": all(c["ok"] for c in checks), "checks": checks}

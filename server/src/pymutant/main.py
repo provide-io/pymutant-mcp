@@ -10,6 +10,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from .baseline import baseline_status, refresh_baseline
 from .failure_explain import explain_failure
 from .init import init_project
 from .ledger import ledger_status, reset_ledger
@@ -68,7 +69,7 @@ def _error_from_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
-def pymutant_set_project_root(path: str) -> dict:
+def pymutant_set_project_root(path: str) -> dict[str, Any]:
     """Set process-local project root for subsequent tool calls in this MCP process."""
     global _PROJECT_ROOT_OVERRIDE
     candidate = Path(path).expanduser()
@@ -103,7 +104,7 @@ def pymutant_run(
     strict_campaign: bool = False,
     changed_only: bool = False,
     base_ref: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Run mutmut mutation testing on the current project.
 
     Args:
@@ -113,13 +114,14 @@ def pymutant_run(
         changed_only: When True, mutate only changed Python files derived from git diff.
         base_ref: Optional git base ref for changed_only diff (default: HEAD).
     """
+    root = _root()
     result = run_mutations(
         paths=paths,
         max_children=max_children,
         strict_campaign=strict_campaign,
         changed_only=changed_only,
         base_ref=base_ref,
-        project_root=_root(),
+        project_root=root,
     )
     transient, reason = classify_transient_failure(result)
     quarantine_entry = None
@@ -130,7 +132,7 @@ def pymutant_run(
             repeatability=0.5,
             consistency=0.7,
             cleanup_success=0.5,
-            project_root=_root(),
+            project_root=root,
         )
     data = dict(result)
     data["quarantine"] = {"transient": transient, "reason": reason, "entry": quarantine_entry}
@@ -140,7 +142,7 @@ def pymutant_run(
 
 
 @mcp.tool()
-def pymutant_kill_stuck() -> dict:
+def pymutant_kill_stuck() -> dict[str, Any]:
     """Kill stuck mutmut/pytest worker processes related to mutation runs."""
     result = kill_stuck_mutmut(project_root=_root())
     ok = bool(result.get("ok", False)) and int(result.get("returncode", 0)) in (0, -1)
@@ -151,7 +153,7 @@ def pymutant_kill_stuck() -> dict:
 def pymutant_results(
     include_killed: bool = False,
     file_filter: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Return structured mutation results from the last run.
 
     Args:
@@ -168,7 +170,7 @@ def pymutant_results(
 
 
 @mcp.tool()
-def pymutant_show_diff(mutant_name: str) -> dict:
+def pymutant_show_diff(mutant_name: str) -> dict[str, Any]:
     """Return unified diff for a single mutant.
 
     Args:
@@ -181,7 +183,7 @@ def pymutant_show_diff(mutant_name: str) -> dict:
 
 
 @mcp.tool()
-def pymutant_compute_score() -> dict:
+def pymutant_compute_score() -> dict[str, Any]:
     """Compute mutation score: killed / (killed + survived + timeout + segfault).
 
     Returns score, percentage string, and per-status counts.
@@ -190,7 +192,7 @@ def pymutant_compute_score() -> dict:
 
 
 @mcp.tool()
-def pymutant_update_score_history(label: str | None = None) -> dict:
+def pymutant_update_score_history(label: str | None = None) -> dict[str, Any]:
     """Append current score to mutation-score.json in the project root.
 
     Args:
@@ -200,7 +202,7 @@ def pymutant_update_score_history(label: str | None = None) -> dict:
 
 
 @mcp.tool()
-def pymutant_surviving_mutants(file_filter: str | None = None) -> dict:
+def pymutant_surviving_mutants(file_filter: str | None = None) -> dict[str, Any]:
     """Return all surviving mutants with diffs, grouped by source file.
 
     Args:
@@ -210,13 +212,13 @@ def pymutant_surviving_mutants(file_filter: str | None = None) -> dict:
 
 
 @mcp.tool()
-def pymutant_score_history() -> dict:
+def pymutant_score_history() -> dict[str, Any]:
     """Return the full score history from mutation-score.json."""
     return _response(load_score_history(_root()))
 
 
 @mcp.tool()
-def pymutant_detect_layout() -> dict:
+def pymutant_detect_layout() -> dict[str, Any]:
     """Detect the project layout and return a suggested mutmut configuration.
 
     Identifies flat, flat_src, or monorepo layouts. For monorepo projects,
@@ -227,7 +229,7 @@ def pymutant_detect_layout() -> dict:
 
 
 @mcp.tool()
-def pymutant_check_setup() -> dict:
+def pymutant_check_setup() -> dict[str, Any]:
     """Run pre-flight checks for mutmut readiness on the project.
 
     Checks: mutmut installed, pyproject.toml present, [tool.mutmut] config exists,
@@ -247,7 +249,7 @@ def pymutant_init(
     pytest_add_cli_args: list[str] | None = None,
     with_conftest: bool = False,
     dry_run: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Scaffold mutmut config in pyproject.toml and optionally create conftest.py.
 
     Auto-detects project layout if paths are not provided. Safe to run on existing
@@ -275,7 +277,7 @@ def pymutant_init(
 
 
 @mcp.tool()
-def pymutant_ledger_status() -> dict:
+def pymutant_ledger_status() -> dict[str, Any]:
     """Return status for mutation ledger and strict campaign progress."""
     root = _root()
     return _response(
@@ -283,12 +285,13 @@ def pymutant_ledger_status() -> dict:
         "ledger": ledger_status(project_root=root),
         "campaign": strict_campaign_status(project_root=root),
         "quarantine": load_quarantine(project_root=root),
+        "baseline": baseline_status(project_root=root, command_mode="status"),
         }
     )
 
 
 @mcp.tool()
-def pymutant_reset_campaign(clear_ledger: bool = False) -> dict:
+def pymutant_reset_campaign(clear_ledger: bool = False) -> dict[str, Any]:
     """Reset strict-campaign state; optionally clear outcome ledger too."""
     root = _root()
     removed_campaign = reset_strict_campaign(project_root=root)
@@ -303,7 +306,7 @@ def pymutant_reset_campaign(clear_ledger: bool = False) -> dict:
 
 
 @mcp.tool()
-def pymutant_rank_survivors(top_n: int = 50, profile: str | None = None, config_path: str | None = None) -> dict:
+def pymutant_rank_survivors(top_n: int = 50, profile: str | None = None, config_path: str | None = None) -> dict[str, Any]:
     root = _root()
     ranked = rank_survivors(project_root=root, top_n=top_n)
     return _response(
@@ -315,31 +318,43 @@ def pymutant_rank_survivors(top_n: int = 50, profile: str | None = None, config_
 
 
 @mcp.tool()
-def pymutant_explain_failure(returncode: int, summary: str = "", stderr: str = "") -> dict:
+def pymutant_explain_failure(returncode: int, summary: str = "", stderr: str = "") -> dict[str, Any]:
     return _response(explain_failure({"returncode": returncode, "summary": summary, "stderr": stderr}))
 
 
 @mcp.tool()
-def pymutant_policy_check(profile: str | None = None, config_path: str | None = None, baseline_path: str | None = None) -> dict:
+def pymutant_policy_check(profile: str | None = None, config_path: str | None = None, baseline_path: str | None = None) -> dict[str, Any]:
     root = _root()
     score_data = compute_score(project_root=root)
+    runtime_baseline = baseline_status(
+        project_root=root,
+        command_mode="policy",
+        profile=profile,
+        config_path=config_path,
+    )
     policy = evaluate_policy(
         current_score=float(score_data["score"]),
         profile=profile,
         config_path=config_path,
         baseline_path=baseline_path,
+        runtime_baseline=runtime_baseline,
         project_root=root,
     )
-    return _response(policy, ok=bool(policy.get("ok", False)), error=None if policy.get("ok") else {"type": "policy_failure", "message": "; ".join(policy.get("failures", []))})
+    if policy.get("ok"):
+        return _response(policy)
+    failures = [str(item) for item in policy.get("failures", [])]
+    baseline_invalid = any(item.startswith("baseline invalid:") for item in failures)
+    error_type = "baseline_invalid" if baseline_invalid else "policy_failure"
+    return _response(policy, ok=False, error={"type": error_type, "message": "; ".join(failures)})
 
 
 @mcp.tool()
-def pymutant_trend_report(window: int = 5) -> dict:
+def pymutant_trend_report(window: int = 5) -> dict[str, Any]:
     return _response(trend_report(load_score_history(_root()), window=window))
 
 
 @mcp.tool()
-def pymutant_suggest_pytest_patch(mutant_name: str, source_file: str, diff: str, apply: bool = False) -> dict:
+def pymutant_suggest_pytest_patch(mutant_name: str, source_file: str, diff: str, apply: bool = False) -> dict[str, Any]:
     return _response(
         suggest_pytest_patch(
             mutant_name=mutant_name,
@@ -352,15 +367,22 @@ def pymutant_suggest_pytest_patch(mutant_name: str, source_file: str, diff: str,
 
 
 @mcp.tool()
-def pymutant_render_report(profile: str | None = None, config_path: str | None = None, baseline_path: str | None = None) -> dict:
+def pymutant_render_report(profile: str | None = None, config_path: str | None = None, baseline_path: str | None = None) -> dict[str, Any]:
     root = _root()
     score_data = compute_score(project_root=root)
     result_data = get_results(include_killed=False, project_root=root)
+    runtime_baseline = baseline_status(
+        project_root=root,
+        command_mode="render_report",
+        profile=profile,
+        config_path=config_path,
+    )
     policy_data = evaluate_policy(
         current_score=float(score_data["score"]),
         profile=profile,
         config_path=config_path,
         baseline_path=baseline_path,
+        runtime_baseline=runtime_baseline,
         project_root=root,
     )
     trend_data = trend_report(load_score_history(root))
@@ -372,6 +394,30 @@ def pymutant_render_report(profile: str | None = None, config_path: str | None =
         project_root=root,
     )
     return _response(report)
+
+
+@mcp.tool()
+def pymutant_baseline_status(profile: str | None = None, config_path: str | None = None, command_mode: str = "status") -> dict[str, Any]:
+    return _response(
+        baseline_status(
+            project_root=_root(),
+            profile=profile,
+            config_path=config_path,
+            command_mode=command_mode,
+        )
+    )
+
+
+@mcp.tool()
+def pymutant_baseline_refresh(profile: str | None = None, config_path: str | None = None, command_mode: str = "manual_refresh") -> dict[str, Any]:
+    return _response(
+        refresh_baseline(
+            project_root=_root(),
+            profile=profile,
+            config_path=config_path,
+            command_mode=command_mode,
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

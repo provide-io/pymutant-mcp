@@ -14,6 +14,15 @@ A globally-installed Claude Code plugin that makes mutation testing with [mutmut
 - This repository supports `uv` only.
 - `pip` workflows are not supported for development, CI, or release tasks.
 
+## Operational Contract
+
+`pymutant` is a controller around `mutmut`, not a mutation engine.
+
+- Runtime parity: execute in the target project's environment (same Python/deps/shims used by CI).
+- Deterministic outputs: all MCP tools return structured JSON envelopes and schema-versioned artifacts.
+- Failure separation: mutation-quality outcomes (`killed/survived/no_tests`) are distinct from execution instability (`timeout/segfault/interruption/tooling errors`).
+- Policy-first gating: enforce absolute floors and baseline-drop policies via profiles and policy checks.
+
 ## Installation
 
 ```bash
@@ -67,6 +76,8 @@ The `pymutant` server exposes these tools to Claude:
 | `pymutant_suggest_pytest_patch` | Generate pytest patch suggestion (optional `apply=true`) |
 | `pymutant_render_report` | Generate HTML report bundle under `dist/` |
 | `pymutant_set_project_root` | Set process-local project root at runtime for this MCP process |
+| `pymutant_baseline_status` | Show execution-baseline validity, drift reasons, and fingerprint |
+| `pymutant_baseline_refresh` | Reset runtime mutation state and write fresh execution baseline |
 
 All tools return the same response envelope:
 
@@ -79,6 +90,12 @@ All tools return the same response envelope:
   "generated_at": "2026-03-09T14:00:00+00:00"
 }
 ```
+
+Mutation run/status/score payloads also include a `baseline` block:
+- `valid`
+- `reasons`
+- `fingerprint_id`
+- `auto_reset_applied`
 
 ## Score History
 
@@ -169,11 +186,12 @@ ln -s ../server/src/pymutant src/pymutant
 
 ```bash
 uv sync
-uv run verify                   # ruff + mypy + bandit + pytest (100% branch coverage)
+uv run verify                   # governance + quality gate (ruff, max-loc, SPDX, mypy, bandit, docs, schemas, pytest 100%)
 uv run python scripts/validate_repo_schemas.py
 uv run mutation-sweep --max-rounds 4 --json-out dist/mutation-gate.json
 uv run benchmark throughput     # deterministic runtime/no-op regression benchmark
 # uv run benchmark quality      # mutation quality gate (long-running)
+uv run mcp-smoke --project-root . --base-ref HEAD
 uv run pre-commit install
 uv run pre-commit run --all-files
 
@@ -183,6 +201,8 @@ cd server && uv run python -m pymutant --project-root ..   # starts pymutant ser
 Pre-commit CQ stack includes:
 - `detect-secrets` (baseline-backed secret scanning)
 - Ruff lint/format
+- max LOC guard (`scripts/check_max_loc.py`)
+- SPDX header compliance check (`scripts/check_spdx_headers.py`)
 - REUSE license compliance + SPDX checks
 - codespell
 - mypy + ty
@@ -235,6 +255,14 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 - Progress is deterministic via `campaign_attempted` and `remaining_not_checked`.
 - Stale selectors are quarantined in `campaign_stale` instead of triggering unfiltered fallback.
 
+### Baseline Lifecycle
+
+`pymutant` tracks runtime execution baseline state in `.pymutant-state/baseline.json`.
+- Baseline fingerprint captures git head, Python/mutmut versions, resolved mutation/test roots, profile hash, and command mode.
+- On `pymutant_run`, drift is auto-detected and runtime mutation state is reset before continuing.
+- Use `pymutant_baseline_status` to inspect validity and drift reasons.
+- Use `pymutant_baseline_refresh` to force reset + re-baseline.
+
 ### Outcome Ledger
 
 `pymutant` now writes an append-only mutation ledger at `.pymutant-ledger.json`.
@@ -247,6 +275,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
 - `verify`: quality + tests + coverage gate
   - emits `bandit-report` artifact (`dist/bandit-report.json`) for audit traceability
+  - runs `uv run mcp-smoke --project-root . --base-ref HEAD` to validate MCP root/setup/run path
 - `mutation_benchmark_throughput` (push/PR/schedule/manual):
   - deterministic strict-campaign stale-selector pass
   - asserts follow-up no-op call behavior (`strict campaign complete; nothing to run`)
@@ -261,6 +290,7 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - uploads `mutation-gate` artifact (`dist/mutation-gate.json`)
 - `mutation_benchmark_quality` (schedule/manual):
   - strict-campaign-first mutation pass with interruption recovery (`kill_stuck_mutmut`)
+  - classifies execution collapse as `tooling_error` (separate from test quality score)
   - enforces score floor and failure budgets (`timeout`, `segfault`, duration, iteration cap, minimum checked mutants)
   - accepts interrupted runs only when mutation progress is recorded and budgets are still satisfied
   - validates `dist/benchmark-quality.json` against `schemas/benchmark-quality.schema.json`

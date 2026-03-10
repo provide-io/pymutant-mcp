@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 
 from pymutant.io_utils import atomic_write_text
@@ -29,10 +30,8 @@ def test_atomic_write_text_cleans_temp_when_replace_fails(monkeypatch, tmp_path:
     monkeypatch.setattr("pymutant.io_utils.os.replace", _replace)
     monkeypatch.setattr("pymutant.io_utils.os.unlink", _unlink)
 
-    try:
+    with suppress(OSError):
         atomic_write_text(target, "x")
-    except OSError:
-        pass
 
     assert "tmp" in seen
     assert not Path(seen["tmp"]).exists()

@@ -64,6 +64,7 @@ def test_compute_score(monkeypatch, tmp_path: Path) -> None:
         "interrupted",
         "not_checked",
         "total",
+        "baseline",
     }
 
 

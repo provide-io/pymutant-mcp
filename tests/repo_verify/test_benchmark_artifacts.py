@@ -23,6 +23,7 @@ def _assert_quality_payload(payload: dict[str, Any]) -> None:
     assert isinstance(payload["counts"], dict)
     assert isinstance(payload["interruptions"], list)
     assert isinstance(payload["checked_mutants"], int)
+    assert isinstance(payload["execution"], dict)
     assert isinstance(payload["profile"], dict)
     assert isinstance(payload["policy"], dict)
     assert isinstance(payload["trend"], dict)

@@ -12,3 +12,4 @@ mutants/
 mutation-score.json
 .pymutant-ledger.json
 .pymutant-strict-campaign.json
+.pymutant-state/

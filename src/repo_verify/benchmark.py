@@ -145,6 +145,20 @@ def run_quality_benchmark(
             )
 
         history = score.load_score_history(project_root)
+        killed = int(score_data.get("killed", 0)) if "killed" in score_data else 0
+        survived = int(score_data.get("survived", 0)) if "survived" in score_data else 0
+        timeouts = int(counts.get("timeout", 0))
+        segfaults = int(counts.get("segfault", 0))
+        quality_signal_known = "killed" in score_data and "survived" in score_data
+
+        execution_reasons: list[str] = []
+        if int(last_run.get("returncode", -1)) != 0 and not interrupted_with_progress:
+            execution_reasons.append(f"nonzero_returncode:{last_run.get('returncode')}")
+        if checked_mutants == 0 and min_checked_mutants > 0:
+            execution_reasons.append("no_mutants_checked")
+        if quality_signal_known and (timeouts + segfaults) > 0 and (killed + survived) == 0:
+            execution_reasons.append("unstable_run_without_quality_signal")
+
         metrics: dict[str, Any] = with_schema(
             {
             "mode": "quality",
@@ -158,6 +172,12 @@ def run_quality_benchmark(
             "counts": counts,
             "interruptions": interruptions,
             "checked_mutants": checked_mutants,
+            "execution": {
+                "status": "tooling_error" if execution_reasons else "ok",
+                "tooling_error": bool(execution_reasons),
+                "reasons": execution_reasons,
+                "interrupted_with_progress": interrupted_with_progress,
+            },
             "profile": resolve_profile(project_root=project_root),
             "policy": evaluate_policy(current_score=float(score_data["score"]), project_root=project_root),
             "trend": trend_report(history),
@@ -165,21 +185,21 @@ def run_quality_benchmark(
         )
 
         failures: list[str] = []
-        if int(last_run.get("returncode", -1)) != 0 and not interrupted_with_progress:
-            failures.append(f"nonzero returncode: {last_run.get('returncode')}")
+        if execution_reasons:
+            failures.append(f"tooling_error: {';'.join(execution_reasons)}")
         if bool(last_run.get("strict_campaign")) and int(last_run.get("remaining_not_checked", -1)) != 0:
             failures.append(f"campaign incomplete: remaining_not_checked={last_run.get('remaining_not_checked')}")
         if iterations >= max_iterations:
             failures.append(f"hit max_iterations={max_iterations}")
-        if float(score_data["score"]) < score_floor:
+        if not execution_reasons and float(score_data["score"]) < score_floor:
             failures.append(f"score below floor: {score_data['score']} < {score_floor}")
-        if int(counts.get("timeout", 0)) > max_timeout:
-            failures.append(f"timeout budget exceeded: {counts.get('timeout', 0)} > {max_timeout}")
-        if int(counts.get("segfault", 0)) > max_segfault:
-            failures.append(f"segfault budget exceeded: {counts.get('segfault', 0)} > {max_segfault}")
+        if timeouts > max_timeout:
+            failures.append(f"timeout budget exceeded: {timeouts} > {max_timeout}")
+        if segfaults > max_segfault:
+            failures.append(f"segfault budget exceeded: {segfaults} > {max_segfault}")
         if duration_seconds > max_duration_seconds:
             failures.append(f"duration budget exceeded: {duration_seconds} > {max_duration_seconds}")
-        if checked_mutants < min_checked_mutants:
+        if not execution_reasons and checked_mutants < min_checked_mutants:
             failures.append(f"checked mutants below floor: {checked_mutants} < {min_checked_mutants}")
         return metrics, failures
     finally:

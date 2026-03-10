@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 _CONFTEST_TEMPLATE = '''\
 """Root conftest — copied by mutmut to mutants/conftest.py.
@@ -64,6 +65,39 @@ def _build_toml_block(
     return "\n".join(lines)
 
 
+def _ensure_gitignore_entries(project_root: Path, *, dry_run: bool) -> tuple[bool, list[str], list[str]]:
+    gitignore_path = project_root / ".gitignore"
+    required = [
+        ".pymutant-state/",
+        "mutants/",
+        ".pymutant-ledger.json",
+        ".pymutant-strict-campaign.json",
+    ]
+    existing_lines = gitignore_path.read_text().splitlines() if gitignore_path.exists() else []
+    existing = set(existing_lines)
+    missing = [item for item in required if item not in existing]
+    if not missing:
+        return False, [], []
+    if dry_run:
+        return (
+            False,
+            [f"[dry_run] would append to .gitignore: {', '.join(missing)}"],
+            [],
+        )
+
+    warnings: list[str] = []
+    try:
+        text = gitignore_path.read_text() if gitignore_path.exists() else ""
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += "\n".join(missing) + "\n"
+        gitignore_path.write_text(text)
+    except OSError as exc:
+        warnings.append(f"could not update .gitignore automatically: {exc}")
+        return False, [], warnings
+    return True, [f"appended to .gitignore: {', '.join(missing)}"], []
+
+
 def init_project(
     paths_to_mutate: list[str] | None = None,
     tests_dir: list[str] | None = None,
@@ -72,7 +106,7 @@ def init_project(
     with_conftest: bool = False,
     dry_run: bool = False,
     project_root: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Scaffold mutmut config in pyproject.toml and optionally create conftest.py.
 
     Args:
@@ -125,6 +159,10 @@ def init_project(
             conftest_written = True
             actions.append("wrote conftest.py with MUTANT_UNDER_TEST sys.path guard")
 
+    gitignore_updated, gitignore_actions, gitignore_warnings = _ensure_gitignore_entries(root, dry_run=dry_run)
+    actions.extend(gitignore_actions)
+    warnings.extend(gitignore_warnings)
+
     return {
         "ok": True,
         "layout": layout_info["layout"],
@@ -132,6 +170,7 @@ def init_project(
         "warnings": warnings,
         "toml_written": toml_written,
         "conftest_written": conftest_written,
+        "gitignore_updated": gitignore_updated,
         "config_used": {
             "paths_to_mutate": _paths,
             "tests_dir": _tests,

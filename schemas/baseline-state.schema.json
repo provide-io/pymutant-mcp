@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "fingerprint_id",
+    "context"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "fingerprint_id": { "type": "string" },
+    "context": {
+      "type": "object",
+      "required": [
+        "git_head",
+        "python_version",
+        "mutmut_version",
+        "mutation_roots",
+        "tests_roots",
+        "profile",
+        "command_mode",
+        "meta_snapshot"
+      ],
+      "properties": {
+        "git_head": { "type": "string" },
+        "python_version": { "type": "string" },
+        "mutmut_version": { "type": "string" },
+        "mutation_roots": { "type": "array", "items": { "type": "string" } },
+        "tests_roots": { "type": "array", "items": { "type": "string" } },
+        "profile": {
+          "type": "object",
+          "required": ["name", "config_path", "hash"],
+          "properties": {
+            "name": { "type": "string" },
+            "config_path": { "type": "string" },
+            "hash": { "type": "string" }
+          }
+        },
+        "command_mode": { "type": "string" },
+        "meta_snapshot": {
+          "type": "object",
+          "required": ["meta_count", "campaign_exists", "ledger_exists"],
+          "properties": {
+            "meta_count": { "type": "integer", "minimum": 0 },
+            "campaign_exists": { "type": "boolean" },
+            "ledger_exists": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -70,6 +70,7 @@ def test_run_mutation_gate_success(monkeypatch, tmp_path: Path) -> None:
     assert failures == []
     assert payload["final_survivors"] == 0
     assert payload["rounds"][0]["survivors_before"] == 2
+    assert payload["execution"]["tooling_error"] is False
 
 
 def test_run_mutation_gate_seed_failure(monkeypatch, tmp_path: Path) -> None:
@@ -90,7 +91,7 @@ def test_run_mutation_gate_seed_failure(monkeypatch, tmp_path: Path) -> None:
         base_ref="origin/main",
         reset_state=True,
     )
-    assert failures == ["seed run failed: 3"]
+    assert failures == ["tooling_error: seed_run_failed:3"]
 
 
 def test_run_mutation_gate_interruption_cleanup(monkeypatch, tmp_path: Path) -> None:
@@ -221,7 +222,7 @@ def test_run_mutation_gate_seed_interrupted_beyond_budget(monkeypatch, tmp_path:
         reset_state=False,
         max_interruptions=0,
     )
-    assert failures == ["seed run interrupted beyond retry budget"]
+    assert failures == ["tooling_error: seed_run_interrupted_beyond_retry_budget"]
 
 
 def test_run_mutation_gate_time_budget_before_round(monkeypatch, tmp_path: Path) -> None:
@@ -306,7 +307,7 @@ def test_run_mutation_gate_batch_interrupted_beyond_budget(monkeypatch, tmp_path
         reset_state=False,
         max_interruptions=0,
     )
-    assert failures == ["batch interruption beyond retry budget in round 1"]
+    assert failures == ["tooling_error: batch_interruption_beyond_retry_budget:round_1"]
 
 
 def test_run_mutation_gate_repeated_survivor_set(monkeypatch, tmp_path: Path) -> None:

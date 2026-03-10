@@ -157,6 +157,24 @@ def test_get_results_progress_handles_malformed_campaign_shape(tmp_path: Path) -
     assert data["progress"]["not_checked_effective"] == 0
 
 
+def test_get_results_returns_empty_when_runtime_baseline_invalid(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "mod.meta").write_text(
+        json.dumps({"exit_code_by_key": {"src.pkg.mod.a__mutmut_1": None}, "durations_by_key": {}})
+    )
+    monkeypatch.setattr(
+        results,
+        "baseline_status",
+        lambda **_kwargs: {"valid": False, "reasons": ["git_head_changed"], "fingerprint_id": "x"},
+    )
+    data = results.get_results(include_killed=True, project_root=tmp_path)
+    assert data["mutants"] == []
+    assert data["total"] == 0
+    assert data["progress"]["source"] == "baseline_invalid"
+    assert data["baseline"]["valid"] is False
+
+
 def test_get_mutant_diff_success(monkeypatch, tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 

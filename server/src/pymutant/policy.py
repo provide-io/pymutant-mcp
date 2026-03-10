@@ -34,6 +34,7 @@ def evaluate_policy(
     profile: str | None = None,
     config_path: str | None = None,
     baseline_path: str | None = None,
+    runtime_baseline: dict[str, Any] | None = None,
     project_root: Path | None = None,
 ) -> dict[str, Any]:
     root = _project_root_or_cwd(project_root)
@@ -55,8 +56,18 @@ def evaluate_policy(
     drop = round(baseline_score - current_score, 4)
 
     failures: list[str] = []
+    runtime_valid = True
+    runtime_reasons: list[str] = []
+    if isinstance(runtime_baseline, dict):
+        runtime_valid = bool(runtime_baseline.get("valid", False))
+        reasons = runtime_baseline.get("reasons", [])
+        if isinstance(reasons, list):
+            runtime_reasons = [str(reason) for reason in reasons]
     if current_score < min_score:
         failures.append(f"score below floor: {current_score} < {min_score}")
+    if not runtime_valid:
+        reasons_text = ", ".join(runtime_reasons) if runtime_reasons else "unknown"
+        failures.append(f"baseline invalid: {reasons_text}")
     if drop > max_drop:
         failures.append(f"score dropped vs baseline: {drop} > {max_drop}")
 
@@ -72,6 +83,8 @@ def evaluate_policy(
                 "drop": drop,
                 "min_score": min_score,
                 "max_drop_from_baseline": max_drop,
+                "runtime_baseline_valid": runtime_valid,
+                "runtime_baseline_reasons": runtime_reasons,
             },
         }
     )

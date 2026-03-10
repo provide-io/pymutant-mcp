@@ -14,7 +14,7 @@ from hypothesis import strategies as st
 from pymutant import ledger, results, score, setup
 
 IDENT = st.from_regex(r"[A-Za-z_][A-Za-z0-9_]*", fullmatch=True)
-KNOWN_EXIT_CODES = {code for code in results.EXIT_CODE_STATUS.keys() if code is not None}
+KNOWN_EXIT_CODES = {code for code in results.EXIT_CODE_STATUS if code is not None}
 UNKNOWN_EXIT_CODES = [i for i in range(-1000, 1001) if i not in KNOWN_EXIT_CODES]
 
 

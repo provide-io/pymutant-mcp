@@ -72,6 +72,7 @@ def run_mutation_gate(
     payload["seed_run"] = seed
 
     failures: list[str] = []
+    tooling_errors: list[str] = []
     while int(seed.get("returncode", 0)) in INTERRUPTION_CODES and interruptions < max_interruptions:
         payload["seed_cleanup"] = runner.kill_stuck_mutmut(project_root=project_root)
         interruptions += 1
@@ -84,9 +85,9 @@ def run_mutation_gate(
         payload["seed_run"] = seed
 
     if int(seed.get("returncode", 0)) in INTERRUPTION_CODES:
-        failures.append("seed run interrupted beyond retry budget")
+        tooling_errors.append("seed_run_interrupted_beyond_retry_budget")
     elif int(seed.get("returncode", 0)) != 0:
-        failures.append(f"seed run failed: {seed.get('returncode')}")
+        tooling_errors.append(f"seed_run_failed:{seed.get('returncode')}")
 
     seen_survivor_sets: set[tuple[str, ...]] = set()
     for idx in range(1, max_rounds + 1):
@@ -110,7 +111,7 @@ def run_mutation_gate(
 
         for batch in _chunks(names_before, batch_size):
             out = runner.run_mutations(paths=batch, max_children=max_children, project_root=project_root)
-            batch_info = {
+            batch_info: dict[str, Any] = {
                 "size": len(batch),
                 "returncode": int(out.get("returncode", -1)),
                 "summary": str(out.get("summary", "")),
@@ -122,7 +123,7 @@ def run_mutation_gate(
                 batch_info["returncode"] = int(out.get("returncode", -1))
                 batch_info["summary"] = str(out.get("summary", ""))
             if int(out.get("returncode", 0)) in INTERRUPTION_CODES:
-                failures.append(f"batch interruption beyond retry budget in round {idx}")
+                tooling_errors.append(f"batch_interruption_beyond_retry_budget:round_{idx}")
             round_data["batches"].append(batch_info)
             if time.monotonic() - start > max_seconds:
                 failures.append(f"time budget exceeded in round {idx}: {max_seconds}s")
@@ -148,6 +149,13 @@ def run_mutation_gate(
     payload["remaining"] = final_survivors
     payload["interruptions"] = interruptions
     payload["elapsed_seconds"] = round(time.monotonic() - start, 3)
+    payload["execution"] = {
+        "status": "tooling_error" if tooling_errors else "ok",
+        "tooling_error": bool(tooling_errors),
+        "reasons": tooling_errors,
+    }
+    if tooling_errors:
+        failures.append(f"tooling_error: {';'.join(tooling_errors)}")
     if final_survivors:
         failures.append(f"survivors remain: {len(final_survivors)}")
 

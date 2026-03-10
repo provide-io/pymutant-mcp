@@ -232,6 +232,8 @@ def test_new_tools_delegate(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "suggest_pytest_patch", lambda **_kwargs: {"applied": False})
     monkeypatch.setattr(main, "get_results", lambda **_kwargs: {"mutants": []})
     monkeypatch.setattr(main, "render_html_bundle", lambda **_kwargs: {"ok": True, "path": "dist/pymutant-report.html"})
+    monkeypatch.setattr(main, "baseline_status", lambda **_kwargs: {"valid": True, "reasons": [], "fingerprint_id": "x"})
+    monkeypatch.setattr(main, "refresh_baseline", lambda **_kwargs: {"valid": True, "fingerprint_id": "x"})
 
     ranked = main.pymutant_rank_survivors()
     explained = main.pymutant_explain_failure(-1, "timed out", "")
@@ -239,6 +241,8 @@ def test_new_tools_delegate(monkeypatch, tmp_path: Path) -> None:
     trend = main.pymutant_trend_report()
     patch = main.pymutant_suggest_pytest_patch("m.a__mutmut_1", "src/a.py", "diff", apply=False)
     report = main.pymutant_render_report()
+    baseline = main.pymutant_baseline_status()
+    refreshed = main.pymutant_baseline_refresh()
 
     assert ranked["ok"] is True
     assert explained["data"]["category"] == "test-harness"
@@ -246,15 +250,28 @@ def test_new_tools_delegate(monkeypatch, tmp_path: Path) -> None:
     assert trend["ok"] is True
     assert patch["ok"] is True
     assert report["ok"] is True
+    assert baseline["ok"] is True
+    assert refreshed["ok"] is True
 
 
 def test_policy_check_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "_root", lambda: tmp_path)
+    monkeypatch.setattr(main, "baseline_status", lambda **_kwargs: {"valid": True, "reasons": []})
     monkeypatch.setattr(main, "compute_score", lambda **_kwargs: {"score": 0.3})
     monkeypatch.setattr(main, "evaluate_policy", lambda **_kwargs: {"ok": False, "failures": ["dropped"]})
     out = main.pymutant_policy_check()
     assert out["ok"] is False
     assert out["error"]["type"] == "policy_failure"
+
+
+def test_policy_check_baseline_invalid(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_root", lambda: tmp_path)
+    monkeypatch.setattr(main, "baseline_status", lambda **_kwargs: {"valid": False, "reasons": ["git_head_changed"]})
+    monkeypatch.setattr(main, "compute_score", lambda **_kwargs: {"score": 0.7})
+    monkeypatch.setattr(main, "evaluate_policy", lambda **_kwargs: {"ok": False, "failures": ["baseline invalid: git_head_changed"]})
+    out = main.pymutant_policy_check()
+    assert out["ok"] is False
+    assert out["error"]["type"] == "baseline_invalid"
 
 
 def test_main_runs_server(monkeypatch) -> None:
@@ -308,7 +325,7 @@ def test_set_project_root_sets_override(monkeypatch, tmp_path: Path) -> None:
     assert out["ok"] is True
     assert out["data"]["resolved_path"] == str(project)
     assert out["data"]["active_project_root"] == str(project)
-    assert main._PROJECT_ROOT_OVERRIDE == project
+    assert project == main._PROJECT_ROOT_OVERRIDE
 
 
 def test_set_project_root_relative(monkeypatch, tmp_path: Path) -> None:

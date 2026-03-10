@@ -25,6 +25,30 @@ repos:
 
   - repo: local
     hooks:
+      - id: max-loc
+        name: python max loc
+        entry: uv run python scripts/check_max_loc.py --max-lines 500 --roots server/src src/repo_verify tests scripts --baseline .ci/max-loc-baseline.json
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: spdx-header-check
+        name: python spdx header check
+        entry: uv run python scripts/check_spdx_headers.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: event-literal-check
+        name: telemetry-style event literal check
+        entry: uv run python scripts/check_event_literals.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
       - id: mypy
         name: mypy strict
         entry: uv run mypy server/src src/repo_verify
@@ -59,7 +83,7 @@ repos:
 
       - id: xenon
         name: xenon complexity
-        entry: uv run xenon --max-absolute E --max-modules D --max-average B server/src/pymutant src/repo_verify
+        entry: uv run python scripts/check_xenon.py --baseline .ci/xenon-baseline.json --max-absolute C --max-modules B --max-average A --paths server/src/pymutant src/repo_verify
         language: system
         pass_filenames: false
         always_run: true
@@ -68,6 +92,14 @@ repos:
       - id: vulture
         name: vulture dead code
         entry: uv run vulture --min-confidence 80 server/src/pymutant src/repo_verify tests
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+
+      - id: check-licenses
+        name: license check
+        entry: uv run python scripts/check_licenses.py
         language: system
         pass_filenames: false
         always_run: true

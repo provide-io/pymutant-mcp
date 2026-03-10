@@ -7,8 +7,9 @@ import json
 import os
 import subprocess  # nosec B404
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
+from .baseline import baseline_status
 from .ledger import resolve_latest_statuses
 from .mutmut_cmd import mutmut_cmd_prefix
 
@@ -88,11 +89,11 @@ def _strict_campaign_progress(project_root: Path) -> dict[str, object]:
     }
 
 
-def load_all_meta_files(project_root: Path | None = None) -> dict[str, dict]:
+def load_all_meta_files(project_root: Path | None = None) -> dict[str, dict[str, Any]]:
     """Load all .meta files from the mutants/ directory."""
     root = _project_root_or_cwd(project_root)
     meta_dir = _meta_dir(root)
-    results: dict[str, dict] = {}
+    results: dict[str, dict[str, Any]] = {}
     if not meta_dir.exists():
         return results
     for meta_file in meta_dir.rglob("*.meta"):
@@ -120,12 +121,28 @@ def get_results(
     file_filter: str | None = None,
     use_ledger: bool = True,
     project_root: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Return structured mutation results from all .meta files."""
     root = _project_root_or_cwd(project_root)
+    baseline = baseline_status(project_root=root, command_mode="results")
+    reasons = [str(reason) for reason in baseline.get("reasons", [])]
+    if not baseline["valid"] and reasons != ["missing_baseline"]:
+        empty_counts: dict[str, int] = {status: 0 for status in set(EXIT_CODE_STATUS.values()) | {"stale"}}
+        return {
+            "mutants": [],
+            "counts": empty_counts,
+            "total": 0,
+            "progress": {
+                "source": "baseline_invalid",
+                "not_checked_effective": 0,
+                "strict_campaign": _strict_campaign_progress(root),
+            },
+            "baseline": baseline,
+        }
+
     meta_files = load_all_meta_files(root)
 
-    all_mutants: list[dict] = []
+    all_mutants: list[dict[str, Any]] = []
     counts: dict[str, int] = {status: 0 for status in set(EXIT_CODE_STATUS.values()) | {"stale"}}
     status_by_key: dict[str, str] = {}
     duration_by_key: dict[str, float | None] = {}
@@ -183,15 +200,16 @@ def get_results(
             "not_checked_effective": not_checked_effective,
             "strict_campaign": campaign,
         },
+        "baseline": baseline,
     }
 
 
 def get_mutant_diff(mutant_name: str, project_root: Path | None = None) -> str:
     """Return unified diff for a single mutant via `mutmut show <name>`."""
     root = _project_root_or_cwd(project_root)
-    cmd = mutmut_cmd_prefix(root) + ["show", mutant_name]
+    cmd = [*mutmut_cmd_prefix(root), "show", mutant_name]
     try:
-        result = subprocess.run(  # noqa: S603,S607  # nosec
+        result = subprocess.run(  # noqa: S603  # nosec
             cmd,
             cwd=str(root),
             capture_output=True,
@@ -212,7 +230,7 @@ def get_mutant_diff(mutant_name: str, project_root: Path | None = None) -> str:
 def get_surviving_mutants(
     file_filter: str | None = None,
     project_root: Path | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return surviving mutants with diffs, grouped by source file."""
     root = _project_root_or_cwd(project_root)
     data = get_results(include_killed=False, file_filter=file_filter, project_root=root)
@@ -223,7 +241,7 @@ def get_surviving_mutants(
         mutant["diff"] = diff
         mutant["diff_error"] = diff.startswith("ERROR:")
 
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for mutant in survivors:
         source_file = mutant["source_file"]
         grouped.setdefault(source_file, []).append(mutant)

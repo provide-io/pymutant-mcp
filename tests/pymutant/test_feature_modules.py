@@ -6,7 +6,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pymutant import failure_explain, patch_suggest, policy, prioritization, profiles, quarantine, reporting, schema, trends
+from pymutant import (
+    failure_explain,
+    patch_suggest,
+    policy,
+    prioritization,
+    profiles,
+    quarantine,
+    reporting,
+    schema,
+    trends,
+)
 
 
 def test_schema_helpers() -> None:
@@ -14,6 +24,10 @@ def test_schema_helpers() -> None:
     assert payload["x"] == 1
     assert payload["schema_version"] == "1.0"
     assert "generated_at" in payload
+    assert isinstance(payload["generated_at"], str)
+    assert "T" in payload["generated_at"]
+    existing = schema.with_schema({"generated_at": "2026-01-01T00:00:00+00:00"})
+    assert existing["generated_at"] == "2026-01-01T00:00:00+00:00"
 
 
 def test_resolve_profile_defaults_and_file(monkeypatch, tmp_path: Path) -> None:
@@ -51,6 +65,8 @@ def test_quarantine_load_classify_and_record(tmp_path: Path) -> None:
     assert non_transient == (False, "non_transient")
 
     assert quarantine.confidence_score(repeatability=2, consistency=-1, cleanup_success=0.5) == 0.8
+    assert quarantine.confidence_score(repeatability=5, consistency=5, cleanup_success=5) == 1.0
+    assert quarantine.confidence_score(repeatability=0.33335, consistency=0.0, cleanup_success=0.0) == 0.1667
 
     entry = quarantine.record_quarantine(
         ["m2", "m1", "m1"],
@@ -62,6 +78,12 @@ def test_quarantine_load_classify_and_record(tmp_path: Path) -> None:
     )
     assert entry["mutants"] == ["m1", "m2"]
     assert 0.0 <= entry["confidence"] <= 1.0
+    out_path = tmp_path / quarantine.QUARANTINE_FILE
+    assert out_path.exists()
+    text = out_path.read_text()
+    assert text.endswith("\n")
+    payload = json.loads(text)
+    assert payload["entries"][-1]["mutants"] == ["m1", "m2"]
 
 
 def test_quarantine_load_invalid_json(tmp_path: Path) -> None:
@@ -158,23 +180,32 @@ def test_explain_failure_categories() -> None:
     assert env_dep["category"] == "environment/dependency"
     assert env_dep["confidence"] == 0.95
     assert env_dep["recommended_action"] == "run `uv sync` in the target repo and retry"
+    assert env_dep["evidence"] == ["import failure in preflight"]
+    assert sorted(env_dep.keys()) == ["category", "confidence", "evidence", "recommended_action"]
 
     setup_cfg = failure_explain.explain_failure({"stderr": "paths_to_mutate invalid", "summary": "", "returncode": 1})
     assert setup_cfg["category"] == "setup/config"
     assert setup_cfg["confidence"] == 0.9
+    assert setup_cfg["evidence"] == ["configuration token found in error output"]
 
     harness = failure_explain.explain_failure({"stderr": "", "summary": "timed out", "returncode": -15})
     assert harness["category"] == "test-harness"
     assert harness["confidence"] == 0.8
+    assert harness["evidence"] == ["timeout/stall/interruption markers"]
+
+    harness_by_code = failure_explain.explain_failure({"stderr": "", "summary": "", "returncode": -15})
+    assert harness_by_code["category"] == "test-harness"
 
     mutant = failure_explain.explain_failure({"stderr": "", "summary": "mutation survived", "returncode": 0})
     assert mutant["category"] == "mutant-behavior"
     assert mutant["confidence"] == 0.75
     assert mutant["recommended_action"] == "add/strengthen assertions for survivor behavior"
+    assert mutant["evidence"] == ["mutation execution completed but mutant survived"]
 
     unknown = failure_explain.explain_failure({"stderr": "", "summary": "", "returncode": 0})
     assert unknown["category"] == "unknown"
     assert unknown["confidence"] == 0.5
+    assert unknown["evidence"] == ["no known classifier matched"]
 
 
 def test_policy_evaluate(tmp_path: Path) -> None:
@@ -197,6 +228,27 @@ def test_policy_with_custom_paths_and_invalid_baseline(tmp_path: Path) -> None:
     baseline.write_text("{")
     out = policy.evaluate_policy(current_score=0.9, baseline_path=str(baseline), project_root=tmp_path)
     assert out["ok"] is True
+
+
+def test_policy_requires_runtime_baseline_when_provided(tmp_path: Path) -> None:
+    out = policy.evaluate_policy(
+        current_score=0.9,
+        project_root=tmp_path,
+        runtime_baseline={"valid": False, "reasons": ["git_head_changed"]},
+    )
+    assert out["ok"] is False
+    assert any("baseline invalid:" in failure for failure in out["failures"])
+    assert out["policy"]["runtime_baseline_valid"] is False
+
+
+def test_policy_runtime_baseline_reasons_non_list(tmp_path: Path) -> None:
+    out = policy.evaluate_policy(
+        current_score=0.9,
+        project_root=tmp_path,
+        runtime_baseline={"valid": False, "reasons": "git_head_changed"},
+    )
+    assert out["ok"] is False
+    assert out["policy"]["runtime_baseline_reasons"] == []
 
 
 def test_trends() -> None:
@@ -256,6 +308,27 @@ def test_patch_suggest(tmp_path: Path) -> None:
         project_root=tmp_path,
     )
     assert again["reason"] == "already_present"
+
+
+def test_render_html_bundle_content_and_truncation(tmp_path: Path) -> None:
+    long_value = "x" * 25000
+    out = reporting.render_html_bundle(
+        score={"a": 1},
+        results={"blob": long_value},
+        policy={"min_score": 0.9},
+        trend={"drift": -0.1},
+        project_root=tmp_path,
+    )
+    html_path = Path(out["path"])
+    assert html_path.exists()
+    body = html_path.read_text()
+    assert "<h1>pymutant report</h1>" in body
+    assert "  &quot;a&quot;: 1" in body
+    assert "&quot;min_score&quot;: 0.9" in body
+    assert "&quot;drift&quot;: -0.1" in body
+    expected_results = reporting.html.escape(json.dumps({"blob": long_value}, indent=2)[:20000])
+    results_block = body.split("<h2>Results</h2>\n    <pre>", 1)[1].split("</pre>", 1)[0]
+    assert results_block == expected_results
 
 
 def test_render_html_bundle(tmp_path: Path) -> None:

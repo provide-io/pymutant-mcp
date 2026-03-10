@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -17,7 +18,5 @@ def atomic_write_text(path: Path, content: str) -> None:
             handle.write(content)
         os.replace(tmp_name, path)
     finally:
-        try:
+        with suppress(FileNotFoundError):
             os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass

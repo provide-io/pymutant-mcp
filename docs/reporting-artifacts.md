@@ -13,6 +13,7 @@ CI writes generated reports and build outputs under `dist/`.
 
 - `dist/benchmark-throughput.json`: throughput benchmark metrics (uploaded as `benchmark-throughput`).
 - `dist/benchmark-quality.json`: quality benchmark metrics (uploaded as `benchmark-quality` or `release-benchmark-quality`).
+  - includes `execution.status` (`ok` or `tooling_error`) and `execution.reasons` for infrastructure/runtime failures
 - `dist/pymutant-report.html`: optional human-readable report bundle.
 
 All JSON artifacts include `schema_version` and `generated_at`.
@@ -23,6 +24,7 @@ Schema files:
 - `schemas/score-history.schema.json`
 - `schemas/profiles.schema.json`
 - `schemas/policy-baseline.schema.json`
+- `schemas/baseline-state.schema.json`
 
 Validation commands:
 - `uv run python scripts/validate_repo_schemas.py`

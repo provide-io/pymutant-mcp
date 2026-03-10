@@ -7,7 +7,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias, cast
 
 from .io_utils import atomic_write_text
 from .results import get_results
@@ -28,7 +28,7 @@ def _score_file_path(project_root: Path | None = None) -> Path:
     return _project_root_or_cwd(project_root) / SCORE_FILE
 
 
-def compute_score(project_root: Path | None = None) -> dict:
+def compute_score(project_root: Path | None = None) -> dict[str, Any]:
     """Compute mutation score from current meta files.
 
     Score = killed / (killed + survived + timeout + segfault).
@@ -68,6 +68,7 @@ def compute_score(project_root: Path | None = None) -> dict:
         "interrupted": counts.get("interrupted", 0),
         "not_checked": not_checked,
         "total": data["total"],
+        "baseline": data.get("baseline"),
     }
 
 
@@ -91,7 +92,7 @@ def load_score_history(project_root: Path | None = None) -> ScoreHistory:
 def update_score_history(
     label: str | None = None,
     project_root: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Append current score to mutation-score.json and return the new entry."""
     root = _project_root_or_cwd(project_root)
     current = compute_score(root)
@@ -115,9 +116,10 @@ def update_score_history(
     if not isinstance(entries, list):
         entries = []
         history["history"] = entries
-    entries.append(entry)
+    typed_entries = cast(list[ScoreEntry], entries)
+    typed_entries.append(entry)
 
     score_file = _score_file_path(root)
     atomic_write_text(score_file, json.dumps(with_schema(history), indent=2))
 
-    return with_schema({"entry": entry, "history_length": len(entries)})
+    return with_schema({"entry": entry, "history_length": len(typed_entries)})

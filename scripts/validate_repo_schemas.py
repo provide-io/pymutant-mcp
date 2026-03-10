@@ -7,7 +7,6 @@ from pathlib import Path
 
 from validate_json_schema import ValidationError, validate_file
 
-
 REQUIRED = [
     (Path('.ci/pymutant-profiles.json'), Path('schemas/profiles.schema.json')),
     (Path('.ci/pymutant-policy-baseline.json'), Path('schemas/policy-baseline.schema.json')),

@@ -36,6 +36,13 @@ uv run python -c "from pymutant import runner; print(runner.strict_campaign_stat
 - Campaign state file: `.pymutant-strict-campaign.json`
 - Reset campaign state if needed: `runner.reset_strict_campaign()`
 
+## Execution Baseline
+
+`pymutant` maintains runtime baseline state at `.pymutant-state/baseline.json`.
+- Use `pymutant_baseline_status` to inspect validity and drift reasons.
+- Use `pymutant_baseline_refresh` to force-reset runtime mutation artifacts and write a fresh baseline.
+- `pymutant_run` auto-resets runtime mutation state on baseline drift and reports this in `data.baseline.auto_reset_applied`.
+
 ## Stuck mutmut Recovery
 
 If runs hang or return interruption codes (`-15`, `-9`):

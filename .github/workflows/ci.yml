@@ -46,6 +46,9 @@ jobs:
       - name: Verify
         run: uv run verify
 
+      - name: MCP smoke
+        run: uv run mcp-smoke --project-root . --base-ref HEAD
+
   mutation_benchmark_throughput:
     if: ${{ github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest

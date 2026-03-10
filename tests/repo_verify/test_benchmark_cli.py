@@ -63,7 +63,7 @@ def test_run_quality_benchmark_pass(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         benchmark.score,
         "compute_score",
-        lambda **_kwargs: {"score": 0.5},
+        lambda **_kwargs: {"score": 0.5, "killed": 3, "survived": 1},
     )
     monkeypatch.setattr(
         benchmark.results,
@@ -87,6 +87,7 @@ def test_run_quality_benchmark_pass(monkeypatch, tmp_path: Path) -> None:
     assert metrics["last_run"]["remaining_not_checked"] == 0
     assert metrics["batch_size"] == 7
     assert metrics["interruptions"] == []
+    assert metrics["execution"]["status"] == "ok"
 
 
 def test_run_quality_benchmark_recovers_from_interruptions(monkeypatch, tmp_path: Path) -> None:
@@ -107,7 +108,7 @@ def test_run_quality_benchmark_recovers_from_interruptions(monkeypatch, tmp_path
         lambda **_kwargs: {"ok": True, "killed_any": True},
     )
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0})
+    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "killed": 1, "survived": 0})
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
     metrics, failures = benchmark.run_quality_benchmark(
@@ -124,6 +125,7 @@ def test_run_quality_benchmark_recovers_from_interruptions(monkeypatch, tmp_path
     assert failures == []
     assert len(metrics["interruptions"]) == 2
     assert metrics["interruptions"][0]["returncode"] == -15
+    assert metrics["execution"]["tooling_error"] is False
 
 
 def test_run_quality_benchmark_cold_start_unfiltered(monkeypatch, tmp_path: Path) -> None:
@@ -148,7 +150,7 @@ def test_run_quality_benchmark_cold_start_unfiltered(monkeypatch, tmp_path: Path
     monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
     monkeypatch.setattr(benchmark.runner, "run_mutations", fake_run_mutations)
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 0.5})
+    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 0.5, "killed": 2, "survived": 1})
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
     metrics, failures = benchmark.run_quality_benchmark(
@@ -184,7 +186,7 @@ def test_run_quality_benchmark_cold_start_interruption_retry(monkeypatch, tmp_pa
     monkeypatch.setattr(benchmark.runner, "run_mutations", fake_run_mutations)
     monkeypatch.setattr(benchmark.runner, "kill_stuck_mutmut", lambda **_kwargs: {"ok": True})
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0})
+    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "killed": 1, "survived": 0})
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
     metrics, failures = benchmark.run_quality_benchmark(
@@ -224,7 +226,7 @@ def test_run_quality_benchmark_collects_failures(monkeypatch, tmp_path: Path) ->
         lambda **_kwargs: {"returncode": 2, "remaining_not_checked": 3, "strict_campaign": True},
     )
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 0.1})
+    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 0.1, "killed": 0, "survived": 0})
     monkeypatch.setattr(
         benchmark.results,
         "get_results",
@@ -243,10 +245,9 @@ def test_run_quality_benchmark_collects_failures(monkeypatch, tmp_path: Path) ->
         max_duration_seconds=0.1,
         min_checked_mutants=0,
     )
-    assert "nonzero returncode: 2" in failures
+    assert any(item.startswith("tooling_error:") for item in failures)
     assert "campaign incomplete: remaining_not_checked=3" in failures
     assert "hit max_iterations=1" in failures
-    assert "score below floor: 0.1 < 0.2" in failures
     assert "timeout budget exceeded: 10 > 1" in failures
     assert "segfault budget exceeded: 20 > 1" in failures
 
@@ -263,7 +264,7 @@ def test_run_quality_benchmark_duration_equal_limit_not_failure(monkeypatch, tmp
     monkeypatch.setattr(
         benchmark.score,
         "compute_score",
-        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0},
+        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0, "killed": 1, "survived": 0},
     )
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
     ticks = iter([100.0, 100.5])
@@ -298,7 +299,7 @@ def test_run_quality_benchmark_restores_batch_with_previous_value(monkeypatch, t
     monkeypatch.setattr(
         benchmark.score,
         "compute_score",
-        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0},
+        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 0, "killed": 1, "survived": 0},
     )
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
 
@@ -331,7 +332,7 @@ def test_run_quality_benchmark_interrupted_with_progress_not_failure(monkeypatch
     monkeypatch.setattr(
         benchmark.score,
         "compute_score",
-        lambda **_kwargs: {"score": 0.8, "total": 10, "not_checked": 1},
+        lambda **_kwargs: {"score": 0.8, "total": 10, "not_checked": 1, "killed": 1, "survived": 1},
     )
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
@@ -348,6 +349,7 @@ def test_run_quality_benchmark_interrupted_with_progress_not_failure(monkeypatch
     )
     assert not any("nonzero returncode" in item for item in failures)
     assert any(item.get("reason") == "interrupted_with_progress" for item in metrics["interruptions"])
+    assert metrics["execution"]["tooling_error"] is False
 
 
 def test_run_quality_benchmark_iteration_and_duration_failures(monkeypatch, tmp_path: Path) -> None:
@@ -359,7 +361,7 @@ def test_run_quality_benchmark_iteration_and_duration_failures(monkeypatch, tmp_
         lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 1},
     )
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
-    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0})
+    monkeypatch.setattr(benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "killed": 1, "survived": 0})
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
     ticks = iter([0.0, 2.0])
     monkeypatch.setattr(benchmark.time, "monotonic", lambda: next(ticks))
@@ -389,11 +391,13 @@ def test_run_quality_benchmark_checked_mutant_floor(monkeypatch, tmp_path: Path)
     )
     monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
     monkeypatch.setattr(
-        benchmark.score, "compute_score", lambda **_kwargs: {"score": 1.0, "total": 0, "not_checked": 0}
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 1.0, "total": 0, "not_checked": 0, "killed": 0, "survived": 0},
     )
     monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {}})
 
-    _metrics, failures = benchmark.run_quality_benchmark(
+    metrics, failures = benchmark.run_quality_benchmark(
         project_root=tmp_path,
         batch_size=5,
         max_children=1,
@@ -404,7 +408,103 @@ def test_run_quality_benchmark_checked_mutant_floor(monkeypatch, tmp_path: Path)
         max_duration_seconds=999.0,
         min_checked_mutants=1,
     )
-    assert any("checked mutants below floor" in item for item in failures)
+    assert any(item.startswith("tooling_error:") for item in failures)
+    assert "no_mutants_checked" in metrics["execution"]["reasons"]
+
+
+def test_run_quality_benchmark_score_floor_without_tooling_error(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        benchmark.runner,
+        "run_mutations",
+        lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
+    )
+    monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
+    monkeypatch.setattr(
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 0.1, "total": 10, "not_checked": 0, "killed": 1, "survived": 2},
+    )
+    monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
+
+    _metrics, failures = benchmark.run_quality_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_iterations=5,
+        score_floor=0.2,
+        max_timeout=10,
+        max_segfault=10,
+        max_duration_seconds=999.0,
+        min_checked_mutants=1,
+    )
+    assert "score below floor: 0.1 < 0.2" in failures
+    assert not any(item.startswith("tooling_error:") for item in failures)
+
+
+def test_run_quality_benchmark_checked_floor_without_tooling_error(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        benchmark.runner,
+        "run_mutations",
+        lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
+    )
+    monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
+    monkeypatch.setattr(
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 1.0, "total": 10, "not_checked": 9, "killed": 1, "survived": 0},
+    )
+    monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 0, "segfault": 0}})
+
+    _metrics, failures = benchmark.run_quality_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_iterations=5,
+        score_floor=0.2,
+        max_timeout=10,
+        max_segfault=10,
+        max_duration_seconds=999.0,
+        min_checked_mutants=2,
+    )
+    assert "checked mutants below floor: 1 < 2" in failures
+    assert not any(item.startswith("tooling_error:") for item in failures)
+
+
+def test_run_quality_benchmark_flags_unstable_run_as_tooling_error(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(benchmark.runner, "reset_strict_campaign", lambda **_kwargs: True)
+    monkeypatch.setattr(benchmark.ledger, "reset_ledger", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        benchmark.runner,
+        "run_mutations",
+        lambda **_kwargs: {"returncode": 0, "remaining_not_checked": 0, "campaign_total": 10},
+    )
+    monkeypatch.setattr(benchmark.ledger, "ledger_status", lambda **_kwargs: {})
+    monkeypatch.setattr(
+        benchmark.score,
+        "compute_score",
+        lambda **_kwargs: {"score": 0.0, "total": 10, "not_checked": 0, "killed": 0, "survived": 0},
+    )
+    monkeypatch.setattr(benchmark.results, "get_results", lambda **_kwargs: {"counts": {"timeout": 5, "segfault": 4}})
+
+    metrics, failures = benchmark.run_quality_benchmark(
+        project_root=tmp_path,
+        batch_size=5,
+        max_children=1,
+        max_iterations=5,
+        score_floor=1.0,
+        max_timeout=10,
+        max_segfault=10,
+        max_duration_seconds=999.0,
+        min_checked_mutants=1,
+    )
+    assert metrics["execution"]["tooling_error"] is True
+    assert metrics["execution"]["status"] == "tooling_error"
+    assert any(item.startswith("tooling_error:") for item in failures)
+    assert not any(item.startswith("score below floor:") for item in failures)
 
 
 def test_run_throughput_benchmark_pass(monkeypatch, tmp_path: Path) -> None:

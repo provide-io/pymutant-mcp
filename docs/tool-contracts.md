@@ -24,6 +24,8 @@
 - `pymutant_trend_report`
 - `pymutant_suggest_pytest_patch`
 - `pymutant_render_report`
+- `pymutant_baseline_status`
+- `pymutant_baseline_refresh`
 
 ## Error Shape
 
@@ -36,6 +38,13 @@ Common keys:
 - `error`: object or `null` (`type`, `message`, `details`)
 - `schema_version`: schema tag for downstream parsers
 - `generated_at`: UTC timestamp
+
+Mutation execution and scoring tools also include a `baseline` block:
+
+- `valid`: whether runtime baseline matches current execution context
+- `reasons`: machine-readable drift reasons
+- `fingerprint_id`: active baseline fingerprint hash
+- `auto_reset_applied`: whether runtime state was auto-reset before execution
 
 For setup/layout checks, `data.checks` includes per-check details.
 

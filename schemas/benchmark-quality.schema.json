@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["schema_version", "generated_at", "mode", "score", "counts", "policy", "trend"],
+  "required": ["schema_version", "generated_at", "mode", "score", "counts", "execution", "policy", "trend"],
   "properties": {
     "schema_version": {"type": "string"},
     "generated_at": {"type": "string"},
     "mode": {"type": "string", "const": "quality"},
     "score": {"type": "object"},
     "counts": {"type": "object"},
+    "execution": {"type": "object"},
     "policy": {"type": "object"},
     "trend": {"type": "object"}
   }

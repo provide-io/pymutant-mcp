@@ -8,16 +8,15 @@ import os
 import shutil
 import signal
 import subprocess  # nosec B404
-import sys
 import time
 import tomllib
 from pathlib import Path
 from typing import TypedDict
 
-from .io_utils import atomic_write_text
-from .ledger import append_ledger_event
-from .mutmut_cmd import mutmut_cmd_prefix, preferred_python
-from .results import EXIT_CODE_STATUS
+from pymutant.io_utils import atomic_write_text
+from pymutant.ledger import append_ledger_event
+from pymutant.mutmut_cmd import mutmut_cmd_prefix, preferred_python
+from pymutant.results import EXIT_CODE_STATUS
 
 MUTMUT_TIMEOUT = 30 * 60  # 30 minutes in seconds
 MUTMUT_NO_PROGRESS_TIMEOUT = 5 * 60  # 5 minutes with no new output
@@ -99,19 +98,18 @@ def _configured_mutation_roots(root: Path) -> list[str]:
 
 def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]:
     mutation_roots = _configured_mutation_roots(root)
+    resolved_mutation_roots = [(root / p).resolve() for p in mutation_roots]
     normalized: set[str] = set()
     for raw in candidates:
         candidate = raw.strip().replace("\\", "/")
-        if not candidate.endswith(".py"):
-            continue
-        if candidate.startswith("/"):
+        if not candidate.endswith(".py") or candidate.startswith("/"):
             continue
         file_path = (root / candidate).resolve()
         if not file_path.exists() or not file_path.is_file():
             continue
         rel = str(file_path.relative_to(root.resolve())).replace("\\", "/")
-        if mutation_roots:
-            in_roots = any(rel == p or rel.startswith(f"{p}/") for p in mutation_roots)
+        if resolved_mutation_roots:
+            in_roots = any(file_path == root_path or root_path in file_path.parents for root_path in resolved_mutation_roots)
             if not in_roots:
                 continue
         normalized.add(rel)
@@ -164,11 +162,7 @@ def _load_not_checked_mutants(root: Path) -> list[str]:
 
 def _sanitize_mutant_meta_files(root: Path) -> MetaSanitizeSummary:
     meta_dir = root / "mutants"
-    summary: MetaSanitizeSummary = {
-        "scanned": 0,
-        "invalid_removed": 0,
-        "removed_paths": [],
-    }
+    summary: MetaSanitizeSummary = {"scanned": 0, "invalid_removed": 0, "removed_paths": []}
     if not meta_dir.exists():
         return summary
 
@@ -273,11 +267,20 @@ def _save_strict_campaign(root: Path, campaign: StrictCampaign) -> None:
     atomic_write_text(_strict_campaign_path(root), json.dumps(campaign, indent=2) + "\n")
 
 
+def _refresh_strict_campaign_names(root: Path, campaign: StrictCampaign) -> StrictCampaign:
+    refreshed_names = _load_not_checked_mutants(root)
+    refreshed_set = set(refreshed_names)
+    return {
+        "names": refreshed_names,
+        "stale": sorted({name for name in campaign["stale"] if name in refreshed_set}),
+        "attempted": sorted({name for name in campaign["attempted"] if name in refreshed_set}),
+    }
+
+
 def _strict_remaining_names(root: Path, campaign: StrictCampaign) -> list[str]:
-    names = campaign["names"]
     attempted = set(campaign["attempted"])
     _ = _load_exit_codes_by_key(root)
-    return [name for name in names if name not in attempted]
+    return [name for name in campaign["names"] if name not in attempted]
 
 
 def _select_batch_names(pending_names: list[str], root: Path, batch_size: int) -> list[str]:
@@ -342,9 +345,7 @@ def _dependency_preflight(root: Path, cmd_prefix: list[str]) -> str | None:
         )
         if result.returncode != 0:
             module = check.replace("import ", "")
-            return (
-                f"Dependency preflight failed: cannot import {module!r} in {python_bin}. Run `uv sync` in this project."
-            )
+            return f"Dependency preflight failed: cannot import {module!r} in {python_bin}. Run `uv sync` in this project."
     return None
 
 
@@ -376,7 +377,7 @@ def _terminate_process_tree(proc: subprocess.Popen[str], grace_seconds: int = 3)
 
 def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
     try:
-        proc = subprocess.Popen(  # noqa: S603,S607  # nosec
+        proc = subprocess.Popen(  # noqa: S603  # nosec
             cmd,
             cwd=str(root),
             stdout=subprocess.PIPE,
@@ -405,12 +406,8 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
             now = time.monotonic()
             partial_out_obj = exc.output or ""
             partial_err_obj = exc.stderr or ""
-            partial_out = (
-                partial_out_obj.decode(errors="replace") if isinstance(partial_out_obj, bytes) else partial_out_obj
-            )
-            partial_err = (
-                partial_err_obj.decode(errors="replace") if isinstance(partial_err_obj, bytes) else partial_err_obj
-            )
+            partial_out = partial_out_obj.decode(errors="replace") if isinstance(partial_out_obj, bytes) else partial_out_obj
+            partial_err = partial_err_obj.decode(errors="replace") if isinstance(partial_err_obj, bytes) else partial_err_obj
 
             if len(partial_out) > len(out_seen) or len(partial_err) > len(err_seen):
                 last_output = now
@@ -454,270 +451,15 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
     }
 
 
-def run_mutations(
-    paths: list[str] | None = None,
-    max_children: int | None = None,
-    strict_campaign: bool = False,
-    changed_only: bool = False,
-    base_ref: str | None = None,
-    project_root: Path | None = None,
-) -> dict:
-    """Run `mutmut run` and return structured output."""
-    root = _project_root_or_cwd(project_root)
-    sanitize = _sanitize_mutant_meta_files(root)
-    cmd_prefix = _mutmut_cmd_prefix(root)
-    preflight_error = _dependency_preflight(root, cmd_prefix)
-    if preflight_error:
-        return {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": preflight_error,
-            "summary": "dependency preflight failed",
-            "meta_sanitize": sanitize,
-        }
-
-    pending_names: list[str] = []
-    batch_names: list[str] = []
-    changed_paths: list[str] = []
-    strict_campaign_state: StrictCampaign | None = None
-    cmd = cmd_prefix + ["run"]
-    if paths:
-        cmd.extend(paths)
-        strict_campaign = False
-        changed_only = False
-    elif changed_only:
-        changed_paths, changed_error = _resolve_changed_paths_for_mutation(root, base_ref=base_ref)
-        if changed_error:
-            return {
-                "returncode": -1,
-                "stdout": "",
-                "stderr": changed_error,
-                "summary": "changed file detection failed",
-                "changed_only": True,
-                "meta_sanitize": sanitize,
-            }
-        if not changed_paths:
-            return {
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "summary": "no changed python files under mutation roots",
-                "batched": False,
-                "batch_size": 0,
-                "strict_campaign": False,
-                "remaining_not_checked": 0,
-                "changed_only": True,
-                "changed_paths": [],
-                "meta_sanitize": sanitize,
-            }
-        cmd.extend(changed_paths)
-        strict_campaign = False
-    else:
-        if strict_campaign:
-            strict_campaign_state = _init_or_load_strict_campaign(root)
-            pending_names = _strict_remaining_names(root, strict_campaign_state)
-            if not pending_names:
-                return {
-                    "returncode": 0,
-                    "stdout": "",
-                    "stderr": "",
-                    "summary": "strict campaign complete; nothing to run",
-                    "batched": False,
-                    "batch_size": 0,
-                    "strict_campaign": True,
-                    "campaign_total": len(strict_campaign_state["names"]),
-                    "campaign_attempted": len(strict_campaign_state["attempted"]),
-                    "campaign_stale": len(strict_campaign_state["stale"]),
-                    "remaining_not_checked": 0,
-                    "meta_sanitize": sanitize,
-                }
-            batch_names = pending_names[: _batch_size()]
-            cmd.extend(batch_names)
-        else:
-            pending_names = _load_not_checked_mutants(root)
-            if pending_names:
-                batch_names = _select_batch_names(pending_names, root, _batch_size())
-                cmd.extend(batch_names)
-    if max_children is not None:
-        cmd.extend(["--max-children", str(max_children)])
-    elif batch_names:
-        cmd.extend(["--max-children", str(DEFAULT_BATCH_MAX_CHILDREN)])
-
-    print(f"Running: {' '.join(cmd)} (cwd={root})", file=sys.stderr)  # MCP-safe log
-    result = _run_cmd(cmd, root)
-    if strict_campaign and strict_campaign_state is not None and batch_names:
-        if isinstance(result.get("returncode"), int) and result["returncode"] != -1:
-            attempted = sorted(set(strict_campaign_state["attempted"]).union(batch_names))
-            strict_campaign_state["attempted"] = attempted
-            _save_strict_campaign(root, strict_campaign_state)
-
-    # mutmut can regenerate mutant keys between runs; refresh once if selectors went stale.
-    stale_filter = "Filtered for specific mutants, but nothing matches"
-    returncode = result.get("returncode")
-    stale_marked = False
-    if (
-        strict_campaign
-        and strict_campaign_state is not None
-        and batch_names
-        and isinstance(returncode, int)
-        and returncode != 0
-        and stale_filter in str(result.get("stderr", ""))
-    ):
-        merged_stale = sorted(set(strict_campaign_state["stale"]).union(batch_names))
-        strict_campaign_state["stale"] = merged_stale
-        _save_strict_campaign(root, strict_campaign_state)
-        stale_marked = True
-        result["returncode"] = 0
-        result["summary"] = "strict campaign skipped stale selectors"
-        err = str(result.get("stderr", "")).strip()
-        result["stderr"] = f"{err}\nMarked stale selectors and continuing strict campaign.".strip()
-        returncode = 0
-
-    if (
-        not strict_campaign
-        and batch_names
-        and isinstance(returncode, int)
-        and returncode != 0
-        and stale_filter in str(result.get("stderr", ""))
-    ):
-        pending_names = _load_not_checked_mutants(root)
-        if pending_names:
-            batch_names = _select_batch_names(pending_names, root, _batch_size())
-            cmd = cmd_prefix + ["run", *batch_names]
-            if max_children is not None:
-                cmd.extend(["--max-children", str(max_children)])
-            else:
-                cmd.extend(["--max-children", str(DEFAULT_BATCH_MAX_CHILDREN)])
-            print(f"Retrying with refreshed batch: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
-            result = _run_cmd(cmd, root)
-            returncode = result.get("returncode")
-
-    # Last-resort recovery: selector IDs can still go stale after refresh.
-    # Fall back to unfiltered `mutmut run` once to re-anchor progress.
-    if (
-        not strict_campaign
-        and batch_names
-        and isinstance(returncode, int)
-        and returncode != 0
-        and stale_filter in str(result.get("stderr", ""))
-    ):
-        cmd = cmd_prefix + ["run"]
-        if max_children is not None:
-            cmd.extend(["--max-children", str(max_children)])
-        else:
-            cmd.extend(["--max-children", str(DEFAULT_BATCH_MAX_CHILDREN)])
-        print(f"Falling back to unfiltered run: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
-        result = _run_cmd(cmd, root)
-
-    if batch_names:
-        context = "strict_campaign_batch" if strict_campaign else "batch"
-        stale_names = set(batch_names) if stale_marked else set()
-        _record_ledger_outcomes(
-            root,
-            batch_names,
-            run_output=str(result.get("stdout", "")),
-            stale_names=stale_names,
-            context=context,
-        )
-    elif paths and all("__mutmut_" in p for p in paths):
-        _record_ledger_outcomes(
-            root,
-            paths,
-            run_output=str(result.get("stdout", "")),
-            context="explicit_selectors",
-        )
-
-    result["batched"] = bool(batch_names)
-    result["batch_size"] = len(batch_names)
-    if strict_campaign and strict_campaign_state is not None:
-        campaign_remaining = _strict_remaining_names(root, strict_campaign_state)
-        result["strict_campaign"] = True
-        result["campaign_total"] = len(strict_campaign_state["names"])
-        result["campaign_attempted"] = len(strict_campaign_state["attempted"])
-        result["campaign_stale"] = len(strict_campaign_state["stale"])
-        result["remaining_not_checked"] = len(campaign_remaining)
-    else:
-        result["strict_campaign"] = False
-        result["remaining_not_checked"] = max(0, len(pending_names) - len(batch_names))
-    result["changed_only"] = changed_only
-    if changed_only:
-        result["changed_paths"] = changed_paths
-    result["meta_sanitize"] = sanitize
-    return result
-
-
-def strict_campaign_status(project_root: Path | None = None) -> dict[str, object]:
-    root = _project_root_or_cwd(project_root)
-    campaign_path = _strict_campaign_path(root)
-    if not campaign_path.exists():
-        return {
-            "path": str(campaign_path),
-            "exists": False,
-            "campaign_total": 0,
-            "campaign_attempted": 0,
-            "campaign_stale": 0,
-            "remaining_not_checked": 0,
-        }
-    campaign = _init_or_load_strict_campaign(root)
+def _noop_payload(summary: str, *, strict_campaign: bool, changed_only: bool = False) -> dict[str, object]:
     return {
-        "path": str(campaign_path),
-        "exists": True,
-        "campaign_total": len(campaign["names"]),
-        "campaign_attempted": len(campaign["attempted"]),
-        "campaign_stale": len(campaign["stale"]),
-        "remaining_not_checked": len(_strict_remaining_names(root, campaign)),
-    }
-
-
-def reset_strict_campaign(project_root: Path | None = None) -> bool:
-    root = _project_root_or_cwd(project_root)
-    root_key = str(root.resolve())
-    _PENDING_CURSOR_BY_ROOT.pop(root_key, None)
-    campaign_path = _strict_campaign_path(root)
-    if not campaign_path.exists():
-        return False
-    campaign_path.unlink()
-    return True
-
-
-def kill_stuck_mutmut(project_root: Path | None = None) -> dict:
-    """Kill stuck mutmut/pytest workers related to mutation runs."""
-    root = _project_root_or_cwd(project_root)
-    if shutil.which("pkill") is None:
-        return {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": "pkill is not available on this system",
-            "summary": "cleanup unavailable",
-        }
-
-    patterns = [
-        f"{root}/mutants",
-        "python -m mutmut",
-        "mutmut run",
-        "MUTANT_UNDER_TEST",
-    ]
-    details: list[dict[str, object]] = []
-    killed_any = False
-    for pattern in patterns:
-        result = subprocess.run(  # noqa: S603  # nosec
-            ["pkill", "-f", pattern],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        killed = result.returncode == 0
-        killed_any = killed_any or killed
-        details.append(
-            {
-                "pattern": pattern,
-                "killed": killed,
-                "returncode": result.returncode,
-            }
-        )
-
-    return {
-        "ok": True,
-        "killed_any": killed_any,
-        "details": details,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "summary": summary,
+        "batched": False,
+        "batch_size": 0,
+        "strict_campaign": strict_campaign,
+        "remaining_not_checked": 0,
+        "changed_only": changed_only,
     }
