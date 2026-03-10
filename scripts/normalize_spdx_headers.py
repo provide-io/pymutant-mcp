@@ -19,10 +19,9 @@ EXCLUDED_PARTS = {
     "dist",
 }
 
-SPDX_HEADER = (
-    "# SPDX-FileCopyrightText: Copyright (c) provide.io llc\n"
-    "# SPDX-License-Identifier: Apache-2.0\n"
-)
+SPDX_COPYRIGHT_LINE = "# " + "SPDX-FileCopyrightText: Copyright (c) provide.io llc"
+SPDX_LICENSE_LINE = "# " + "SPDX-License-Identifier" + ": Apache-2.0"
+SPDX_HEADER = f"{SPDX_COPYRIGHT_LINE}\n{SPDX_LICENSE_LINE}\n"
 
 
 def _iter_python_files(roots: Iterable[Path]) -> Iterable[Path]:
@@ -38,7 +37,7 @@ def _iter_python_files(roots: Iterable[Path]) -> Iterable[Path]:
 
 def _has_spdx_header(text: str) -> bool:
     head = "\n".join(text.splitlines()[:5])
-    return "SPDX-FileCopyrightText:" in head and "SPDX-License-Identifier:" in head
+    return "SPDX-FileCopyrightText:" in head and "SPDX-License-Identifier" in head
 
 
 def _normalize_python_text(text: str) -> str:

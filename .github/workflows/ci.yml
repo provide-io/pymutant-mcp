@@ -37,13 +37,6 @@ jobs:
       - name: Bandit report
         run: uv run bandit -r server/src/pymutant src/repo_verify -f json -o dist/bandit-report.json -ll
 
-      - name: Upload Bandit artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: bandit-report
-          path: dist/bandit-report.json
-
       - name: Docs link check (remote)
         run: uv run python scripts/check_markdown_links.py --root . --check-remote --timeout 10 --retries 2
 
@@ -107,13 +100,6 @@ jobs:
       - name: Validate throughput schema
         run: uv run python scripts/validate_json_schema.py --data dist/benchmark-throughput.json --schema schemas/benchmark-throughput.schema.json
 
-      - name: Upload throughput benchmark artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-throughput
-          path: dist/benchmark-throughput.json
-
   mutation-gate:
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && github.actor != 'nektos/act' }}
     runs-on: ubuntu-latest
@@ -140,13 +126,6 @@ jobs:
           else
             uv run mutation-gate --max-rounds 4 --max-seconds 900 --max-interruptions 8 --json-out dist/mutation-gate.json
           fi
-
-      - name: Upload mutation gate artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutation-gate
-          path: dist/mutation-gate.json
 
   mutation_benchmark_quality:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
@@ -191,20 +170,6 @@ jobs:
               project_root=root,
           )
           PY
-
-      - name: Upload quality benchmark artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-quality
-          path: dist/benchmark-quality.json
-
-      - name: Upload HTML report artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-report-html
-          path: dist/pymutant-report.html
 
   build:
     if: ${{ github.actor != 'nektos/act' }}

@@ -71,20 +71,6 @@ jobs:
           )
           PY
 
-      - name: Upload quality benchmark artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-benchmark-quality
-          path: dist/benchmark-quality.json
-
-      - name: Upload HTML report artifact
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-benchmark-report-html
-          path: dist/pymutant-report.html
-
   build:
     runs-on: ubuntu-latest
     needs: [verify, mutation_benchmark_quality]
@@ -122,10 +108,3 @@ jobs:
 
       - name: Verify checksums
         run: sha256sum -c dist/SHA256SUMS
-
-      - name: Upload release artifacts
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-dist
-          path: dist/
