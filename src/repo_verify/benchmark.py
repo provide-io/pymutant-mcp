@@ -256,7 +256,10 @@ def run_throughput_benchmark(
         failures: list[str] = []
         if int(first.get("returncode", -1)) != 0:
             failures.append(f"first strict run failed: {first.get('returncode')}")
-        if int(first.get("campaign_stale", 0)) < 1:
+        # On fresh CI checkouts strict campaigns can legitimately contain no
+        # runnable selectors (campaign_total == 0). Only require stale marking
+        # when the first strict pass actually had campaign entries.
+        if int(first.get("campaign_total", 0)) > 0 and int(first.get("campaign_stale", 0)) < 1:
             failures.append("first strict run did not mark stale selector")
         if int(second.get("returncode", -1)) != 0:
             failures.append(f"noop strict run failed: {second.get('returncode')}")

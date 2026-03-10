@@ -546,7 +546,7 @@ def test_run_throughput_benchmark_failures(monkeypatch, tmp_path: Path) -> None:
     def fake_run_mutations(**_kwargs):  # type: ignore[no-untyped-def]
         calls["n"] += 1
         if calls["n"] == 1:
-            return {"returncode": 1, "campaign_stale": 0}
+            return {"returncode": 1, "campaign_total": 1, "campaign_stale": 0}
         return {"returncode": 2, "batch_size": 1, "remaining_not_checked": 1, "summary": "x"}
 
     ticks = iter([0.0, 0.0, 10.0, 10.0, 20.0, 20.0])
