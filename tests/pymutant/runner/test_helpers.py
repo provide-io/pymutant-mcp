@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pymutant import runner
+from pymutant import ledger, runner
 
 
 def _patch_runner_symbol(
@@ -111,7 +111,18 @@ def test_filter_changed_python_paths_resolved_symlink_root(tmp_path: Path) -> No
     (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pymutant/"]\n')
 
     out = runner._filter_changed_python_paths(tmp_path, ["server/src/pymutant/runner.py"])
-    assert out == ["server/src/pymutant/runner.py"]
+    assert out == ["src/pymutant/runner.py"]
+
+
+def test_filter_changed_python_paths_file_root_keeps_exact_file_selector(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "pkg"
+    src.mkdir(parents=True)
+    target = src / "a.py"
+    target.write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pkg/a.py"]\n')
+
+    out = runner._filter_changed_python_paths(tmp_path, ["src/pkg/a.py"])
+    assert out == ["src/pkg/a.py"]
 
 def test_resolve_changed_paths_for_mutation_no_git(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(runner.shutil, "which", lambda _name: None)
@@ -259,17 +270,10 @@ def test_load_exit_codes_by_key_missing_or_bad_json(tmp_path: Path) -> None:
 
 def test_record_ledger_outcomes_records_stale_and_mapped(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_load_exit_codes_by_key", lambda _root: {"m1": 1, "m2": None})
-    seen: dict[str, object] = {}
-
-    def _append(outcomes: dict[str, str], context: str, project_root: Path) -> None:
-        seen["outcomes"] = outcomes
-        seen["context"] = context
-        seen["project_root"] = project_root
-
-    _patch_runner_symbol(monkeypatch, "append_ledger_event", _append)
     runner._record_ledger_outcomes(tmp_path, ["m1", "m2"], stale_names={"m2"}, context="ctx")
-    assert seen["outcomes"] == {"m1": "killed", "m2": "stale"}
-    assert seen["context"] == "ctx"
+    event = ledger.load_ledger(tmp_path)["events"][-1]
+    assert event["mutants"] == {"m1": "killed", "m2": "stale"}
+    assert event["context"] == "ctx"
 
 def test_record_ledger_outcomes_empty_names_noop(monkeypatch, tmp_path: Path) -> None:
     called = {"append": False}
@@ -353,6 +357,12 @@ def test_init_or_load_strict_campaign_invalid_attempted(tmp_path: Path) -> None:
 def test_strict_remaining_names_filters_completed_and_stale(monkeypatch, tmp_path: Path) -> None:
     campaign = {"names": ["m1", "m2", "m3"], "stale": ["m3"], "attempted": ["m2", "m3"]}
     _patch_runner_symbol(monkeypatch, "_load_exit_codes_by_key", lambda _root: {"m1": None, "m2": 1, "m3": None})
+    assert runner._strict_remaining_names(tmp_path, campaign) == ["m1"]
+
+
+def test_strict_remaining_names_filters_stale_even_if_not_attempted(monkeypatch, tmp_path: Path) -> None:
+    campaign = {"names": ["m1", "m2"], "stale": ["m2"], "attempted": []}
+    _patch_runner_symbol(monkeypatch, "_load_exit_codes_by_key", lambda _root: {"m1": None, "m2": None})
     assert runner._strict_remaining_names(tmp_path, campaign) == ["m1"]
 
 def test_requires_mcp_dependency_from_paths(tmp_path: Path) -> None:
@@ -446,4 +456,3 @@ def test_dependency_preflight_includes_mcp_when_required(monkeypatch, tmp_path: 
 
 def test_dependency_preflight_non_module_cmd(tmp_path: Path) -> None:
     assert runner._dependency_preflight(tmp_path, ["mutmut"]) is None
-

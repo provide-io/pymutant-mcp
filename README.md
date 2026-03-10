@@ -246,6 +246,7 @@ Use `pymutant_run(changed_only=true)` to target only changed Python files from g
 - Optional `base_ref` (for example `origin/main`) uses `base_ref...HEAD`.
 - Untracked Python files are included when they are under configured `paths_to_mutate`.
 - If no changed Python files match mutation roots, the tool returns a no-op success response.
+- If changed selectors do not map to active mutants, the tool returns a no-op success response (`no matching mutants for changed selectors`) rather than a tooling error.
 
 ### Strict Campaign Mode
 
@@ -253,7 +254,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 - On first call, pymutant snapshots pending mutant IDs to `.pymutant-strict-campaign.json`.
 - Each call processes only the next batch from that fixed snapshot.
 - Progress is deterministic via `campaign_attempted` and `remaining_not_checked`.
-- Stale selectors are quarantined in `campaign_stale` instead of triggering unfiltered fallback.
+- Stale selectors are quarantined in `campaign_stale`, excluded from `remaining_not_checked`, and no longer re-queued.
 
 ### Baseline Lifecycle
 

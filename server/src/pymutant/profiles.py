@@ -28,6 +28,17 @@ def _load_profile_file(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _resolve_profile_config_path(root: Path, config_path: str | None) -> Path:
+    if config_path:
+        path = Path(config_path).expanduser()
+        return path if path.is_absolute() else (root / path).resolve()
+    env_config = os.environ.get("PYMUTANT_PROFILE_CONFIG")
+    if env_config:
+        path = Path(env_config).expanduser()
+        return path if path.is_absolute() else (root / path).resolve()
+    return (root / DEFAULT_PROFILE_FILE).resolve()
+
+
 def _default_profile() -> Profile:
     return {
         "name": "default",
@@ -50,13 +61,7 @@ def resolve_profile(
     root = _project_root_or_cwd(project_root)
     selected = profile or os.environ.get("PYMUTANT_PROFILE") or "default"
 
-    file_path = (
-        Path(config_path)
-        if config_path
-        else Path(os.environ.get("PYMUTANT_PROFILE_CONFIG", "")).expanduser()
-        if os.environ.get("PYMUTANT_PROFILE_CONFIG")
-        else root / DEFAULT_PROFILE_FILE
-    )
+    file_path = _resolve_profile_config_path(root, config_path)
 
     config = _load_profile_file(file_path)
     profiles = config.get("profiles", {}) if isinstance(config.get("profiles", {}), dict) else {}

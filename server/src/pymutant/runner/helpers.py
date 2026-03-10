@@ -98,7 +98,7 @@ def _configured_mutation_roots(root: Path) -> list[str]:
 
 def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]:
     mutation_roots = _configured_mutation_roots(root)
-    resolved_mutation_roots = [(root / p).resolve() for p in mutation_roots]
+    resolved_mutation_roots = [(p, (root / p).resolve()) for p in mutation_roots]
     normalized: set[str] = set()
     for raw in candidates:
         candidate = raw.strip().replace("\\", "/")
@@ -108,11 +108,22 @@ def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]
         if not file_path.exists() or not file_path.is_file():
             continue
         rel = str(file_path.relative_to(root.resolve())).replace("\\", "/")
-        if resolved_mutation_roots:
-            in_roots = any(file_path == root_path or root_path in file_path.parents for root_path in resolved_mutation_roots)
-            if not in_roots:
+        if not resolved_mutation_roots:
+            normalized.add(rel)
+            continue
+
+        mapped_paths: list[str] = []
+        for configured_root, resolved_root in resolved_mutation_roots:
+            if not (file_path == resolved_root or resolved_root in file_path.parents):
                 continue
-        normalized.add(rel)
+            suffix = str(file_path.relative_to(resolved_root)).replace("\\", "/")
+            mapped = configured_root.strip().rstrip("/")
+            if suffix and suffix != ".":
+                mapped = f"{mapped}/{suffix}"
+            mapped_paths.append(mapped)
+
+        if mapped_paths:
+            normalized.add(sorted(mapped_paths)[0])
     return sorted(normalized)
 
 
@@ -279,8 +290,9 @@ def _refresh_strict_campaign_names(root: Path, campaign: StrictCampaign) -> Stri
 
 def _strict_remaining_names(root: Path, campaign: StrictCampaign) -> list[str]:
     attempted = set(campaign["attempted"])
+    stale = set(campaign["stale"])
     _ = _load_exit_codes_by_key(root)
-    return [name for name in campaign["names"] if name not in attempted]
+    return [name for name in campaign["names"] if name not in attempted and name not in stale]
 
 
 def _select_batch_names(pending_names: list[str], root: Path, batch_size: int) -> list[str]:

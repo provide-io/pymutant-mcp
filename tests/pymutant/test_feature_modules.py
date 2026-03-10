@@ -54,6 +54,16 @@ def test_resolve_profile_env_and_invalid_file(monkeypatch, tmp_path: Path) -> No
     assert out["profile"]["name"] == "default"
 
 
+def test_resolve_profile_relative_config_path_is_project_relative(tmp_path: Path) -> None:
+    cfg = tmp_path / ".ci" / "local-profiles.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"profiles": {"ci": {"policy": {"min_score": 0.7}}}}))
+    out = profiles.resolve_profile(profile="ci", config_path=".ci/local-profiles.json", project_root=tmp_path)
+    assert out["profile"]["name"] == "ci"
+    assert out["profile"]["policy"]["min_score"] == 0.7
+    assert out["config_path"] == str(tmp_path / ".ci" / "local-profiles.json")
+
+
 def test_quarantine_load_classify_and_record(tmp_path: Path) -> None:
     assert quarantine.load_quarantine(tmp_path)["entries"] == []
 
@@ -228,6 +238,16 @@ def test_policy_with_custom_paths_and_invalid_baseline(tmp_path: Path) -> None:
     baseline.write_text("{")
     out = policy.evaluate_policy(current_score=0.9, baseline_path=str(baseline), project_root=tmp_path)
     assert out["ok"] is True
+
+
+def test_policy_relative_baseline_path_is_project_relative(tmp_path: Path) -> None:
+    baseline = tmp_path / ".ci" / "local-baseline.json"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text(json.dumps({"profiles": {"default": {"baseline_score": 0.8}}}))
+    out = policy.evaluate_policy(current_score=0.7, baseline_path=".ci/local-baseline.json", project_root=tmp_path)
+    assert out["ok"] is False
+    assert any("score dropped vs baseline" in failure for failure in out["failures"])
+    assert out["policy"]["baseline_path"] == str(tmp_path / ".ci" / "local-baseline.json")
 
 
 def test_policy_requires_runtime_baseline_when_provided(tmp_path: Path) -> None:

@@ -28,6 +28,13 @@ def _load_baseline(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _resolve_baseline_path(root: Path, baseline_path: str | None) -> Path:
+    if baseline_path is None:
+        return (root / BASELINE_FILE).resolve()
+    path = Path(baseline_path).expanduser()
+    return path if path.is_absolute() else (root / path).resolve()
+
+
 def evaluate_policy(
     *,
     current_score: float,
@@ -42,7 +49,7 @@ def evaluate_policy(
     active = resolved["profile"]
     policy_cfg = active.get("policy", {}) if isinstance(active.get("policy", {}), dict) else {}
 
-    baseline_file = root / BASELINE_FILE if baseline_path is None else Path(baseline_path)
+    baseline_file = _resolve_baseline_path(root, baseline_path)
     baseline = _load_baseline(baseline_file)
     baseline_profiles = baseline.get("profiles", {}) if isinstance(baseline.get("profiles", {}), dict) else {}
     baseline_score = float(

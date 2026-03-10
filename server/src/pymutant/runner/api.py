@@ -274,6 +274,17 @@ def run_mutations(
     _apply_max_children(cmd, batch_names=batch_names, max_children=max_children)
     print(f"Running: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
     result = _run_cmd(cmd, root)
+    stale_filter = "Filtered for specific mutants, but nothing matches"
+    if (
+        changed_only
+        and isinstance(result.get("returncode"), int)
+        and result["returncode"] != 0
+        and stale_filter in str(result.get("stderr", ""))
+    ):
+        result = {
+            **_noop_payload("no matching mutants for changed selectors", strict_campaign=False, changed_only=True),
+            "changed_paths": changed_paths,
+        }
 
     if (
         strict_campaign

@@ -276,7 +276,6 @@ def test_strict_campaign_status_existing_and_reset(tmp_path: Path) -> None:
     assert out["campaign_total"] == 2
     assert out["campaign_attempted"] == 1
     assert out["campaign_stale"] == 1
-    assert out["remaining_not_checked"] == 1
+    assert out["remaining_not_checked"] == 0
     assert runner.reset_strict_campaign(tmp_path) is True
     assert runner.reset_strict_campaign(tmp_path) is False
-

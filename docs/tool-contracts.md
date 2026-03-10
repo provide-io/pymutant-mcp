@@ -54,3 +54,8 @@ For setup/layout checks, `data.checks` includes per-check details.
 - explicit `paths`
 - `strict_campaign=true` (snapshot-based selector progression)
 - `changed_only=true` with optional `base_ref` for git-diff-based file targeting
+
+Additional behavior guarantees:
+- `changed_only` returns success no-op when no changed files match mutation roots.
+- `changed_only` returns success no-op when changed selectors map to no active mutants (`summary: "no matching mutants for changed selectors"`).
+- `strict_campaign` excludes stale selectors from remaining work accounting (`remaining_not_checked`).

@@ -325,6 +325,22 @@ def test_run_mutations_changed_only_runs_paths(monkeypatch, tmp_path: Path) -> N
     assert out["changed_only"] is True
     assert out["changed_paths"] == ["src/a.py"]
 
+
+def test_run_mutations_changed_only_no_matching_selectors_is_noop(monkeypatch, tmp_path: Path) -> None:
+    _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
+    _patch_runner_symbol(monkeypatch, "_resolve_changed_paths_for_mutation", lambda *_a, **_k: (["src/a.py"], None))
+    monkeypatch.setattr(
+        runner.subprocess,
+        "Popen",
+        lambda *a, **k: _FakePopen([("", "Filtered for specific mutants, but nothing matches")], returncode=1),
+    )
+    out = runner.run_mutations(changed_only=True, base_ref="origin/main", project_root=tmp_path)
+    assert out["returncode"] == 0
+    assert out["summary"] == "no matching mutants for changed selectors"
+    assert out["changed_only"] is True
+    assert out["changed_paths"] == ["src/a.py"]
+
 def test_run_mutations_paths_mutant_selectors_record_ledger(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
@@ -367,4 +383,3 @@ def test_run_mutations_strict_campaign_does_not_mark_attempted_on_launch_error(m
     assert out["returncode"] == -1
     assert out["campaign_attempted"] == 0
     assert out["remaining_not_checked"] == 1
-

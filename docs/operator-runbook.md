@@ -35,6 +35,13 @@ uv run python -c "from pymutant import runner; print(runner.strict_campaign_stat
 
 - Campaign state file: `.pymutant-strict-campaign.json`
 - Reset campaign state if needed: `runner.reset_strict_campaign()`
+- Stale selectors are tracked in `campaign_stale` and excluded from `remaining_not_checked`.
+
+## Changed-Only No-Op Semantics
+
+`changed_only` runs should be deterministic and non-fatal when scope resolves to nothing actionable.
+- No changed Python files under mutation roots: no-op success.
+- Changed selectors that map to no active mutants: no-op success with summary `no matching mutants for changed selectors`.
 
 ## Execution Baseline
 
