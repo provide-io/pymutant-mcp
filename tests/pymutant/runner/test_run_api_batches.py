@@ -55,6 +55,12 @@ class _FakePopen:
     def kill(self) -> None:
         self.returncode = -9
 
+    def __enter__(self) -> _FakePopen:
+        return self
+
+    def __exit__(self, *_args: object) -> bool:
+        return False
+
 
 @pytest.fixture(autouse=True)
 def _stub_runtime_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,7 +94,6 @@ def test_run_mutations_batches_pending_respects_explicit_max_children(monkeypatc
     assert seen["cmd"] == ["mutmut", "run", "m1", "--max-children", "4"]
 
 def test_run_mutations_batched_retries_when_filters_stale(monkeypatch, tmp_path: Path) -> None:
-    runner._PENDING_CURSOR_BY_ROOT.clear()
     _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
     _patch_runner_symbol(monkeypatch, "_batch_size", lambda: 2)
@@ -110,7 +115,7 @@ def test_run_mutations_batched_retries_when_filters_stale(monkeypatch, tmp_path:
     monkeypatch.setattr(runner.subprocess, "Popen", _popen)
     out = runner.run_mutations(project_root=tmp_path)
     assert cmds[0] == ["mutmut", "run", "old1", "old2", "--max-children", "2"]
-    assert cmds[1] == ["mutmut", "run", "new3", "new1", "--max-children", "2"]
+    assert cmds[1] == ["mutmut", "run", "new1", "new2", "--max-children", "2"]
     assert out["returncode"] == 0
 
 def test_run_mutations_batched_retry_with_explicit_max_children(monkeypatch, tmp_path: Path) -> None:

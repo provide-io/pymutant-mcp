@@ -2,7 +2,7 @@
   "allow_violations": [
     "block \"server/src/pymutant/runner.py:469 run_mutations\" has a rank of F",
     "block \"server/src/pymutant/setup.py:156 check_setup\" has a rank of D",
-    "block \"src/repo_verify/benchmark.py:51 run_quality_benchmark\" has a rank of E",
+    "block \"src/repo_verify/benchmark.py:46 run_quality_benchmark\" has a rank of E",
     "block \"src/repo_verify/mutation_gate.py:36 run_mutation_gate\" has a rank of D",
     "module 'server/src/pymutant/failure_explain.py' has a rank of C"
   ]

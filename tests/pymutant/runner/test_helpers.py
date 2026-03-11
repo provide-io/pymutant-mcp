@@ -100,6 +100,22 @@ def test_filter_changed_python_paths_without_config(tmp_path: Path) -> None:
     out = runner._filter_changed_python_paths(tmp_path, ["mod.py"])
     assert out == ["mod.py"]
 
+def test_filter_changed_python_paths_accepts_absolute_paths(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    mod = src / "a.py"
+    mod.write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/"]\n')
+    out = runner._filter_changed_python_paths(tmp_path, [str(mod.resolve())])
+    assert out == ["src/a.py"]
+
+def test_filter_changed_python_paths_ignores_absolute_paths_outside_root(tmp_path: Path) -> None:
+    external = tmp_path.parent / "external-outside.py"
+    external.parent.mkdir(parents=True, exist_ok=True)
+    external.write_text("x=1\n")
+    out = runner._filter_changed_python_paths(tmp_path, [str(external.resolve())])
+    assert out == []
+
 def test_filter_changed_python_paths_resolved_symlink_root(tmp_path: Path) -> None:
     server_mod = tmp_path / "server" / "src" / "pymutant"
     server_mod.mkdir(parents=True)
@@ -123,6 +139,58 @@ def test_filter_changed_python_paths_file_root_keeps_exact_file_selector(tmp_pat
 
     out = runner._filter_changed_python_paths(tmp_path, ["src/pkg/a.py"])
     assert out == ["src/pkg/a.py"]
+
+def test_normalize_path_selectors_rewrites_to_configured_root(tmp_path: Path) -> None:
+    real = tmp_path / "server" / "src" / "pkg"
+    real.mkdir(parents=True)
+    target = real / "mod.py"
+    target.write_text("x=1\n")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "pkg").symlink_to(real)
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pkg/"]\n')
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, [str(target)])
+    assert normalized == ["src/pkg/mod.py"]
+    assert ignored == []
+
+def test_normalize_path_selectors_preserves_mutant_names_and_missing_paths(tmp_path: Path) -> None:
+    selector = "a.b__mutmut_1"
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, [selector, "missing.py"])
+    assert normalized == [selector, "missing.py"]
+    assert ignored == []
+
+def test_normalize_path_selectors_handles_empty_and_non_python_selectors(tmp_path: Path) -> None:
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, ["", "pkg.module"])
+    assert normalized == ["pkg.module"]
+    assert ignored == [""]
+
+def test_normalize_path_selectors_outside_root_without_config_keeps_selector(tmp_path: Path) -> None:
+    external = tmp_path.parent / "external-outside-selectors.py"
+    external.parent.mkdir(parents=True, exist_ok=True)
+    external.write_text("x=1\n")
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, [str(external.resolve())])
+    assert normalized == [str(external.resolve())]
+    assert ignored == []
+
+def test_normalize_path_selectors_configured_file_root_keeps_exact_selector(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "pkg"
+    src.mkdir(parents=True)
+    target = src / "a.py"
+    target.write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pkg/a.py"]\n')
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, ["src/pkg/a.py"])
+    assert normalized == ["src/pkg/a.py"]
+    assert ignored == []
+
+def test_normalize_path_selectors_configured_roots_without_match_keep_original(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "other"
+    src.mkdir(parents=True)
+    target = src / "a.py"
+    target.write_text("x=1\n")
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/included/"]\n')
+    normalized, ignored = runner._normalize_path_selectors(tmp_path, ["src/other/a.py"])
+    assert normalized == ["src/other/a.py"]
+    assert ignored == []
 
 def test_resolve_changed_paths_for_mutation_no_git(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(runner.shutil, "which", lambda _name: None)
@@ -192,6 +260,33 @@ def test_load_not_checked_mutants_ignores_bad_json(tmp_path: Path) -> None:
     (meta_dir / "x.meta").write_text("{")
     assert runner._load_not_checked_mutants(tmp_path) == []
 
+
+def test_load_not_checked_mutants_ignores_non_mapping_exit_codes(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "x.meta").write_text('{"exit_code_by_key":[["a", null]]}')
+    assert runner._load_not_checked_mutants(tmp_path) == []
+
+
+def test_load_not_checked_mutants_retries_transient_json_decode(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    target = meta_dir / "x.meta"
+    target.write_text('{"exit_code_by_key":{"a":null}}')
+
+    attempts = {"n": 0}
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == target and attempts["n"] == 0:
+            attempts["n"] += 1
+            return "{"
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(runner.helpers.time, "sleep", lambda _s: None)
+    assert runner._load_not_checked_mutants(tmp_path) == ["a"]
+
 def test_sanitize_mutant_meta_files(tmp_path: Path) -> None:
     meta_dir = tmp_path / "mutants"
     meta_dir.mkdir(parents=True)
@@ -207,6 +302,29 @@ def test_sanitize_mutant_meta_files(tmp_path: Path) -> None:
     assert str(bad) in summary["removed_paths"]
     assert good.exists()
     assert not bad.exists()
+
+
+def test_sanitize_mutant_meta_files_retries_before_deleting(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    target = meta_dir / "x.meta"
+    target.write_text('{"exit_code_by_key":{"a":1}}')
+
+    attempts = {"n": 0}
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == target and attempts["n"] == 0:
+            attempts["n"] += 1
+            return "{"
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(runner.helpers.time, "sleep", lambda _s: None)
+    summary = runner._sanitize_mutant_meta_files(tmp_path)
+    assert summary["scanned"] == 1
+    assert summary["invalid_removed"] == 0
+    assert target.exists()
 
 def test_sanitize_mutant_meta_files_removes_multiple_invalid(tmp_path: Path) -> None:
     meta_dir = tmp_path / "mutants"
@@ -245,15 +363,17 @@ def test_sanitize_mutant_meta_files_unlink_error(monkeypatch, tmp_path: Path) ->
     assert bad.exists()
 
 def test_select_batch_names_empty(tmp_path: Path) -> None:
-    runner._PENDING_CURSOR_BY_ROOT.clear()
     assert runner._select_batch_names([], tmp_path, 2) == []
 
-def test_select_batch_names_rotates_and_wraps(tmp_path: Path) -> None:
-    runner._PENDING_CURSOR_BY_ROOT.clear()
+def test_select_batch_names_takes_first_batch(tmp_path: Path) -> None:
     names = ["a", "b", "c"]
     assert runner._select_batch_names(names, tmp_path, 2) == ["a", "b"]
-    assert runner._select_batch_names(names, tmp_path, 2) == ["c", "a"]
-    assert runner._select_batch_names(names, tmp_path, 2) == ["b", "c"]
+    assert runner._select_batch_names(names, tmp_path, 2) == ["a", "b"]
+
+
+def test_select_batch_names_enforces_min_batch_size(tmp_path: Path) -> None:
+    names = ["a", "b", "c"]
+    assert runner._select_batch_names(names, tmp_path, 0) == ["a"]
 
 def test_load_exit_codes_by_key(tmp_path: Path) -> None:
     meta_dir = tmp_path / "mutants" / "src"
@@ -267,6 +387,43 @@ def test_load_exit_codes_by_key_missing_or_bad_json(tmp_path: Path) -> None:
     meta_dir.mkdir(parents=True)
     (meta_dir / "x.meta").write_text("{")
     assert runner._load_exit_codes_by_key(tmp_path) == {}
+
+
+def test_load_exit_codes_by_key_skips_non_object_json(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "x.meta").write_text("[]")
+    assert runner._load_exit_codes_by_key(tmp_path) == {}
+
+
+def test_load_exit_codes_by_key_ignores_non_mapping_exit_codes(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "x.meta").write_text('{"exit_code_by_key":[["a", 1]]}')
+    assert runner._load_exit_codes_by_key(tmp_path) == {}
+
+
+def test_load_exit_codes_by_key_handles_read_oserror(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    target = meta_dir / "x.meta"
+    target.write_text('{"exit_code_by_key":{"a":1}}')
+
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == target:
+            raise OSError("boom")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    assert runner._load_exit_codes_by_key(tmp_path) == {}
+
+
+def test_runner_load_meta_json_returns_none_when_retries_zero(tmp_path: Path) -> None:
+    target = tmp_path / "x.meta"
+    target.write_text('{"exit_code_by_key":{"a":1}}')
+    assert runner.helpers._load_meta_json(target, retries=0) is None
 
 def test_record_ledger_outcomes_records_stale_and_mapped(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_load_exit_codes_by_key", lambda _root: {"m1": 1, "m2": None})
@@ -456,3 +613,11 @@ def test_dependency_preflight_includes_mcp_when_required(monkeypatch, tmp_path: 
 
 def test_dependency_preflight_non_module_cmd(tmp_path: Path) -> None:
     assert runner._dependency_preflight(tmp_path, ["mutmut"]) is None
+
+def test_sanitize_cmd_output_removes_ansi_spinner_and_truncates(monkeypatch) -> None:
+    monkeypatch.setattr(runner.helpers, "MAX_CMD_OUTPUT_CHARS", 20)
+    raw = "\x1b[31merror\x1b[0m\r\n⠋ 1/10 working\r\nnormal line with many characters here\r\n"
+    sanitized = runner._sanitize_cmd_output(raw)
+    assert "error" in sanitized
+    assert "⠋ 1/10" not in sanitized
+    assert "output truncated" in sanitized

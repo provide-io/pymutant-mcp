@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess  # nosec B404
@@ -13,6 +14,7 @@ import tomllib
 from pathlib import Path
 from typing import TypedDict
 
+from pymutant.config import get_env_batch_size
 from pymutant.io_utils import atomic_write_text
 from pymutant.ledger import append_ledger_event
 from pymutant.mutmut_cmd import mutmut_cmd_prefix, preferred_python
@@ -22,8 +24,10 @@ MUTMUT_TIMEOUT = 30 * 60  # 30 minutes in seconds
 MUTMUT_NO_PROGRESS_TIMEOUT = 5 * 60  # 5 minutes with no new output
 DEFAULT_MUTANT_BATCH_SIZE = 10
 DEFAULT_BATCH_MAX_CHILDREN = 2
-_PENDING_CURSOR_BY_ROOT: dict[str, int] = {}
+MAX_CMD_OUTPUT_CHARS = 32_000
 STRICT_CAMPAIGN_FILE = ".pymutant-strict-campaign.json"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+SPINNER_LINE_RE = re.compile(r"^[\s|/\\\-\u2800-\u28ff]+\d+/\d+")
 RESULT_ICON_STATUS = {
     "🎉": "killed",
     "🙁": "survived",
@@ -69,14 +73,7 @@ def _mutmut_cmd_prefix(root: Path) -> list[str]:
 
 
 def _batch_size() -> int:
-    raw = os.environ.get("PYMUTANT_BATCH_SIZE")
-    if raw is None:
-        return DEFAULT_MUTANT_BATCH_SIZE
-    try:
-        value = int(raw)
-    except ValueError:
-        return DEFAULT_MUTANT_BATCH_SIZE
-    return max(1, value)
+    return get_env_batch_size(DEFAULT_MUTANT_BATCH_SIZE, minimum=1)
 
 
 def _configured_mutation_roots(root: Path) -> list[str]:
@@ -96,27 +93,57 @@ def _configured_mutation_roots(root: Path) -> list[str]:
     return roots
 
 
+def _load_meta_json(meta_file: Path, retries: int = 3, retry_delay_seconds: float = 0.05) -> dict[str, object] | None:
+    for attempt in range(retries):
+        try:
+            data = json.loads(meta_file.read_text())
+        except json.JSONDecodeError:
+            if attempt < retries - 1:
+                time.sleep(retry_delay_seconds)
+                continue
+            return None
+        except OSError:
+            return None
+        if isinstance(data, dict):
+            return data
+        return None
+    return None
+
+
 def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]:
     mutation_roots = _configured_mutation_roots(root)
-    resolved_mutation_roots = [(p, (root / p).resolve()) for p in mutation_roots]
+    root_variants = [
+        (configured_root, (root / configured_root).absolute(), (root / configured_root).resolve())
+        for configured_root in mutation_roots
+    ]
     normalized: set[str] = set()
     for raw in candidates:
         candidate = raw.strip().replace("\\", "/")
-        if not candidate.endswith(".py") or candidate.startswith("/"):
+        if not candidate.endswith(".py"):
             continue
-        file_path = (root / candidate).resolve()
+        file_path = Path(candidate)
+        file_path = (root / file_path).absolute() if not file_path.is_absolute() else file_path.absolute()
         if not file_path.exists() or not file_path.is_file():
             continue
-        rel = str(file_path.relative_to(root.resolve())).replace("\\", "/")
-        if not resolved_mutation_roots:
+        try:
+            rel = str(file_path.relative_to(root.absolute())).replace("\\", "/")
+        except ValueError:
+            continue
+        if not root_variants:
             normalized.add(rel)
             continue
 
         mapped_paths: list[str] = []
-        for configured_root, resolved_root in resolved_mutation_roots:
-            if not (file_path == resolved_root or resolved_root in file_path.parents):
+        for configured_root, logical_root, resolved_root in root_variants:
+            base_root: Path | None = None
+            if file_path == logical_root or logical_root in file_path.parents:
+                base_root = logical_root
+            elif file_path == resolved_root or resolved_root in file_path.parents:
+                base_root = resolved_root
+            if base_root is None:
                 continue
-            suffix = str(file_path.relative_to(resolved_root)).replace("\\", "/")
+
+            suffix = str(file_path.relative_to(base_root)).replace("\\", "/")
             mapped = configured_root.strip().rstrip("/")
             if suffix and suffix != ".":
                 mapped = f"{mapped}/{suffix}"
@@ -125,6 +152,66 @@ def _filter_changed_python_paths(root: Path, candidates: list[str]) -> list[str]
         if mapped_paths:
             normalized.add(sorted(mapped_paths)[0])
     return sorted(normalized)
+
+
+def _normalize_path_selectors(root: Path, selectors: list[str]) -> tuple[list[str], list[str]]:
+    mutation_roots = _configured_mutation_roots(root)
+    root_variants = [
+        (configured_root, (root / configured_root).absolute(), (root / configured_root).resolve())
+        for configured_root in mutation_roots
+    ]
+    normalized: list[str] = []
+    ignored: list[str] = []
+
+    for raw_selector in selectors:
+        selector = raw_selector.strip()
+        if not selector:
+            ignored.append(raw_selector)
+            continue
+        if "__mutmut_" in selector:
+            normalized.append(selector)
+            continue
+        if not selector.endswith(".py"):
+            normalized.append(selector)
+            continue
+
+        file_path = Path(selector)
+        file_path = (root / file_path).absolute() if not file_path.is_absolute() else file_path.absolute()
+        if not file_path.exists() or not file_path.is_file():
+            # Keep unresolved file selectors as-is; mutmut may still resolve them.
+            normalized.append(selector)
+            continue
+
+        if not root_variants:
+            try:
+                normalized.append(str(file_path.relative_to(root.absolute())).replace("\\", "/"))
+            except ValueError:
+                normalized.append(selector)
+            continue
+
+        mapped_paths: list[str] = []
+        for configured_root, logical_root, resolved_root in root_variants:
+            base_root: Path | None = None
+            if file_path == logical_root or logical_root in file_path.parents:
+                base_root = logical_root
+            elif file_path == resolved_root or resolved_root in file_path.parents:
+                base_root = resolved_root
+            if base_root is None:
+                continue
+
+            suffix = str(file_path.relative_to(base_root)).replace("\\", "/")
+            mapped = configured_root.strip().rstrip("/")
+            if suffix and suffix != ".":
+                mapped = f"{mapped}/{suffix}"
+            mapped_paths.append(mapped)
+
+        if mapped_paths:
+            normalized.append(sorted(mapped_paths)[0])
+        else:
+            normalized.append(selector)
+
+    # Preserve caller intent while avoiding duplicate selectors.
+    return list(dict.fromkeys(normalized)), ignored
 
 
 def _resolve_changed_paths_for_mutation(root: Path, base_ref: str | None = None) -> tuple[list[str], str | None]:
@@ -161,12 +248,14 @@ def _load_not_checked_mutants(root: Path) -> list[str]:
         return []
     names: list[str] = []
     for meta_file in meta_dir.rglob("*.meta"):
-        try:
-            data = json.loads(meta_file.read_text())
-        except (json.JSONDecodeError, OSError):
+        data = _load_meta_json(meta_file)
+        if data is None:
             continue
-        for name, exit_code in data.get("exit_code_by_key", {}).items():
-            if exit_code is None:
+        exit_code_by_key = data.get("exit_code_by_key", {})
+        if not isinstance(exit_code_by_key, dict):
+            continue
+        for name, exit_code in exit_code_by_key.items():
+            if isinstance(name, str) and exit_code is None:
                 names.append(name)
     return sorted(names)
 
@@ -179,15 +268,14 @@ def _sanitize_mutant_meta_files(root: Path) -> MetaSanitizeSummary:
 
     for meta_file in meta_dir.rglob("*.meta"):
         summary["scanned"] += 1
+        if _load_meta_json(meta_file) is not None:
+            continue
         try:
-            json.loads(meta_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            try:
-                meta_file.unlink()
-            except OSError:
-                continue
-            summary["invalid_removed"] += 1
-            summary["removed_paths"].append(str(meta_file))
+            meta_file.unlink()
+        except OSError:
+            continue
+        summary["invalid_removed"] += 1
+        summary["removed_paths"].append(str(meta_file))
     return summary
 
 
@@ -201,12 +289,14 @@ def _load_exit_codes_by_key(root: Path) -> dict[str, int | None]:
         return {}
     exit_codes: dict[str, int | None] = {}
     for meta_file in meta_dir.rglob("*.meta"):
-        try:
-            data = json.loads(meta_file.read_text())
-        except (json.JSONDecodeError, OSError):
+        data = _load_meta_json(meta_file)
+        if data is None:
             continue
-        for name, code in data.get("exit_code_by_key", {}).items():
-            exit_codes[name] = code
+        exit_code_by_key = data.get("exit_code_by_key", {})
+        if not isinstance(exit_code_by_key, dict):
+            continue
+        for name, code in exit_code_by_key.items():
+            exit_codes[str(name)] = code if isinstance(code, int) or code is None else None
     return exit_codes
 
 
@@ -288,27 +378,18 @@ def _refresh_strict_campaign_names(root: Path, campaign: StrictCampaign) -> Stri
     }
 
 
-def _strict_remaining_names(root: Path, campaign: StrictCampaign) -> list[str]:
+def _strict_remaining_names(_root: Path, campaign: StrictCampaign) -> list[str]:
     attempted = set(campaign["attempted"])
     stale = set(campaign["stale"])
-    _ = _load_exit_codes_by_key(root)
     return [name for name in campaign["names"] if name not in attempted and name not in stale]
 
 
 def _select_batch_names(pending_names: list[str], root: Path, batch_size: int) -> list[str]:
+    _ = root
     if not pending_names:
         return []
-    batch_take = min(batch_size, len(pending_names))
-    root_key = str(root.resolve())
-    cursor = _PENDING_CURSOR_BY_ROOT.get(root_key, 0)
-    start = cursor % len(pending_names)
-    end = start + batch_take
-    if end <= len(pending_names):
-        batch = pending_names[start:end]
-    else:
-        batch = pending_names[start:] + pending_names[: end - len(pending_names)]
-    _PENDING_CURSOR_BY_ROOT[root_key] = cursor + batch_take
-    return batch
+    batch_take = min(max(1, batch_size), len(pending_names))
+    return pending_names[:batch_take]
 
 
 def _requires_mcp_dependency(root: Path) -> bool:
@@ -389,14 +470,82 @@ def _terminate_process_tree(proc: subprocess.Popen[str], grace_seconds: int = 3)
 
 def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
     try:
-        proc = subprocess.Popen(  # noqa: S603  # nosec
+        with subprocess.Popen(  # noqa: S603  # nosec
             cmd,
             cwd=str(root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
-        )
+        ) as proc:
+            start = time.monotonic()
+            last_output = start
+            out_seen = ""
+            err_seen = ""
+
+            while True:
+                try:
+                    stdout, stderr = proc.communicate(timeout=1)
+                    break
+                except subprocess.TimeoutExpired as exc:
+                    now = time.monotonic()
+                    partial_out_obj = exc.output or ""
+                    partial_err_obj = exc.stderr or ""
+                    partial_out = (
+                        partial_out_obj.decode(errors="replace")
+                        if isinstance(partial_out_obj, bytes)
+                        else partial_out_obj
+                    )
+                    partial_err = (
+                        partial_err_obj.decode(errors="replace")
+                        if isinstance(partial_err_obj, bytes)
+                        else partial_err_obj
+                    )
+
+                    if len(partial_out) > len(out_seen) or len(partial_err) > len(err_seen):
+                        last_output = now
+                        out_seen = partial_out
+                        err_seen = partial_err
+
+                    if now - start >= MUTMUT_TIMEOUT:
+                        _terminate_process_tree(proc)
+                        out_sanitized = _sanitize_cmd_output(out_seen)
+                        return {
+                            "returncode": -1,
+                            "stdout": out_sanitized,
+                            "stderr": "mutmut run timed out after 30 minutes",
+                            "summary": "Timed out",
+                        }
+
+                    if now - last_output >= MUTMUT_NO_PROGRESS_TIMEOUT:
+                        _terminate_process_tree(proc)
+                        out_sanitized = _sanitize_cmd_output(out_seen)
+                        return {
+                            "returncode": -1,
+                            "stdout": out_sanitized,
+                            "stderr": (
+                                "mutmut run stalled with no new output for "
+                                f"{MUTMUT_NO_PROGRESS_TIMEOUT} seconds; terminated process tree"
+                            ),
+                            "summary": "Stalled",
+                        }
+                except FileNotFoundError:
+                    return {
+                        "returncode": -1,
+                        "stdout": "",
+                        "stderr": "mutmut not found — install it in the target project with `uv add mutmut`",
+                        "summary": "mutmut not found",
+                    }
+
+            stdout = _sanitize_cmd_output(stdout)
+            stderr = _sanitize_cmd_output(stderr)
+            combined = stdout + stderr
+            return {
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "summary": _extract_summary(combined),
+            }
     except FileNotFoundError:
         return {
             "returncode": -1,
@@ -405,62 +554,25 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
             "summary": "mutmut not found",
         }
 
-    start = time.monotonic()
-    last_output = start
-    out_seen = ""
-    err_seen = ""
 
-    while True:
-        try:
-            stdout, stderr = proc.communicate(timeout=1)
-            break
-        except subprocess.TimeoutExpired as exc:
-            now = time.monotonic()
-            partial_out_obj = exc.output or ""
-            partial_err_obj = exc.stderr or ""
-            partial_out = partial_out_obj.decode(errors="replace") if isinstance(partial_out_obj, bytes) else partial_out_obj
-            partial_err = partial_err_obj.decode(errors="replace") if isinstance(partial_err_obj, bytes) else partial_err_obj
-
-            if len(partial_out) > len(out_seen) or len(partial_err) > len(err_seen):
-                last_output = now
-                out_seen = partial_out
-                err_seen = partial_err
-
-            if now - start >= MUTMUT_TIMEOUT:
-                _terminate_process_tree(proc)
-                return {
-                    "returncode": -1,
-                    "stdout": out_seen,
-                    "stderr": "mutmut run timed out after 30 minutes",
-                    "summary": "Timed out",
-                }
-
-            if now - last_output >= MUTMUT_NO_PROGRESS_TIMEOUT:
-                _terminate_process_tree(proc)
-                return {
-                    "returncode": -1,
-                    "stdout": out_seen,
-                    "stderr": (
-                        "mutmut run stalled with no new output for "
-                        f"{MUTMUT_NO_PROGRESS_TIMEOUT} seconds; terminated process tree"
-                    ),
-                    "summary": "Stalled",
-                }
-        except FileNotFoundError:
-            return {
-                "returncode": -1,
-                "stdout": "",
-                "stderr": "mutmut not found — install it in the target project with `uv add mutmut`",
-                "summary": "mutmut not found",
-            }
-
-    combined = stdout + stderr
-    return {
-        "returncode": proc.returncode,
-        "stdout": stdout,
-        "stderr": stderr,
-        "summary": _extract_summary(combined),
-    }
+def _sanitize_cmd_output(output: str) -> str:
+    if not output:
+        return ""
+    text = output.replace("\r\n", "\n").replace("\r", "\n")
+    text = ANSI_ESCAPE_RE.sub("", text)
+    cleaned_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if SPINNER_LINE_RE.match(line):
+            continue
+        cleaned_lines.append(line)
+    compact = "\n".join(cleaned_lines).strip()
+    if len(compact) <= MAX_CMD_OUTPUT_CHARS:
+        return compact
+    reserve = min(120, max(10, MAX_CMD_OUTPUT_CHARS // 2))
+    keep = max(1, MAX_CMD_OUTPUT_CHARS - reserve)
+    omitted = len(compact) - keep
+    return f"{compact[:keep]}\n\n[output truncated: omitted {omitted} characters]"
 
 
 def _noop_payload(summary: str, *, strict_campaign: bool, changed_only: bool = False) -> dict[str, object]:

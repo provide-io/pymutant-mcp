@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
 from pymutant import ledger, results, runner, score
+from pymutant.config import restore_env_batch_size, set_env_batch_size
 from pymutant.policy import evaluate_policy
 from pymutant.profiles import resolve_profile
 from pymutant.schema import with_schema
@@ -36,16 +36,11 @@ def _write_json(path: Path | None, payload: dict[str, Any]) -> None:
 
 
 def _set_batch_size(batch_size: int) -> str | None:
-    previous = os.environ.get("PYMUTANT_BATCH_SIZE")
-    os.environ["PYMUTANT_BATCH_SIZE"] = str(batch_size)
-    return previous
+    return set_env_batch_size(batch_size)
 
 
 def _restore_batch_size(previous: str | None) -> None:
-    if previous is None:
-        os.environ.pop("PYMUTANT_BATCH_SIZE", None)
-    else:
-        os.environ["PYMUTANT_BATCH_SIZE"] = previous
+    restore_env_batch_size(previous)
 
 
 def run_quality_benchmark(

@@ -25,12 +25,78 @@ def test_load_all_meta_files_skips_invalid_json(tmp_path: Path) -> None:
     assert "mutants/src/bad.meta" not in loaded
 
 
+def test_load_all_meta_files_retries_transient_json_decode_error(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    target = meta_dir / "x.meta"
+    target.write_text('{"ok": true}')
+
+    attempts = {"n": 0}
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == target and attempts["n"] == 0:
+            attempts["n"] += 1
+            return "{"
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(results.time, "sleep", lambda _s: None)
+
+    loaded = results.load_all_meta_files(tmp_path)
+    assert loaded == {"mutants/x.meta": {"ok": True}}
+
+
+def test_load_all_meta_files_skips_non_object_json(tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "x.meta").write_text("[]")
+    assert results.load_all_meta_files(tmp_path) == {}
+
+
+def test_load_all_meta_files_handles_read_oserror(monkeypatch, tmp_path: Path) -> None:
+    meta_dir = tmp_path / "mutants"
+    meta_dir.mkdir(parents=True)
+    target = meta_dir / "x.meta"
+    target.write_text('{"ok": true}')
+
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == target:
+            raise OSError("boom")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    assert results.load_all_meta_files(tmp_path) == {}
+
+
+def test_load_meta_json_returns_none_when_retries_zero(tmp_path: Path) -> None:
+    target = tmp_path / "x.meta"
+    target.write_text('{"ok": true}')
+    assert results._load_meta_json(target, retries=0) is None
+
+
 def test_key_to_source_file_with_function_segment() -> None:
     assert results._key_to_source_file("src.pkg.mod.func__mutmut_2") == "src/pkg/mod.py"
 
 
 def test_key_to_source_file_without_function_segment() -> None:
     assert results._key_to_source_file("singlemodule__mutmut_2") == "singlemodule.py"
+
+
+def test_key_to_source_file_resolves_class_method_against_project_root(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "auth.py").write_text("class UserManager: ...\n")
+
+    key = "src.auth.UserManager.verify__mutmut_1"
+    assert results._key_to_source_file(key, tmp_path) == "src/auth.py"
+
+
+def test_key_to_source_file_project_root_fallback_when_missing(tmp_path: Path) -> None:
+    key = "src.auth.UserManager.verify__mutmut_1"
+    assert results._key_to_source_file(key, tmp_path) == "src/auth/UserManager.py"
 
 
 def test_get_results_counts_and_filtering(tmp_path: Path) -> None:

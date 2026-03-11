@@ -8,8 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-DEFAULT_PROFILE_FILE = ".ci/pymutant-profiles.json"
-
+from .config import DEFAULT_PROFILE_FILE, get_env_profile_config, get_env_profile_name
 
 Profile = dict[str, Any]
 
@@ -32,7 +31,7 @@ def _resolve_profile_config_path(root: Path, config_path: str | None) -> Path:
     if config_path:
         path = Path(config_path).expanduser()
         return path if path.is_absolute() else (root / path).resolve()
-    env_config = os.environ.get("PYMUTANT_PROFILE_CONFIG")
+    env_config = get_env_profile_config()
     if env_config:
         path = Path(env_config).expanduser()
         return path if path.is_absolute() else (root / path).resolve()
@@ -59,7 +58,8 @@ def resolve_profile(
 ) -> dict[str, Any]:
     """Resolve active profile using precedence CLI > env > file."""
     root = _project_root_or_cwd(project_root)
-    selected = profile or os.environ.get("PYMUTANT_PROFILE") or "default"
+    env_profile = get_env_profile_name()
+    selected = profile or env_profile or "default"
 
     file_path = _resolve_profile_config_path(root, config_path)
 
@@ -75,7 +75,7 @@ def resolve_profile(
         active["name"] = selected
 
     return {
-        "source": "cli" if profile else "env" if os.environ.get("PYMUTANT_PROFILE") else "file",
+        "source": "cli" if profile else "env" if env_profile else "file",
         "config_path": str(file_path),
         "profile": active,
     }

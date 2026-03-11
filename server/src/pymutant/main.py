@@ -11,6 +11,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .baseline import baseline_status, refresh_baseline
+from .config import get_env_project_root, set_env_project_root
 from .failure_explain import explain_failure
 from .init import init_project
 from .ledger import ledger_status, reset_ledger
@@ -41,7 +42,7 @@ def _root() -> Path:
     """
     if _PROJECT_ROOT_OVERRIDE is not None:
         return _PROJECT_ROOT_OVERRIDE
-    env_root = os.environ.get("PYMUTANT_PROJECT_ROOT")
+    env_root = get_env_project_root()
     if env_root:
         return Path(env_root)
     return Path(os.getcwd())
@@ -431,7 +432,7 @@ def main(argv: list[str] | None = None) -> None:
         root = Path(args.project_root).expanduser()
         if not root.is_absolute():
             root = (Path.cwd() / root).resolve()
-        os.environ["PYMUTANT_PROJECT_ROOT"] = str(root)
+        set_env_project_root(root)
     mcp.run()
 
 

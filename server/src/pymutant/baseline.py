@@ -222,12 +222,21 @@ def reset_runtime_state(project_root: Path) -> dict[str, Any]:
     removed_meta = 0
     mutants_dir = paths["mutants_dir"]
     if mutants_dir.exists():
-        for meta_file in mutants_dir.rglob("*.meta"):
-            try:
-                meta_file.unlink()
-                removed_meta += 1
-            except OSError:
-                continue
+        removed_meta = len(list(mutants_dir.rglob("*.meta")))
+        try:
+            shutil.rmtree(mutants_dir)
+            removed_mutants_dir = True
+        except OSError:
+            removed_mutants_dir = False
+            removed_meta = 0
+            for meta_file in mutants_dir.rglob("*.meta"):
+                try:
+                    meta_file.unlink()
+                    removed_meta += 1
+                except OSError:
+                    continue
+    else:
+        removed_mutants_dir = False
 
     removed_campaign = False
     campaign_path = paths["strict_campaign"]
@@ -243,6 +252,7 @@ def reset_runtime_state(project_root: Path) -> dict[str, Any]:
 
     return {
         "removed_meta_files": removed_meta,
+        "removed_mutants_dir": removed_mutants_dir,
         "removed_campaign": removed_campaign,
         "removed_ledger": removed_ledger,
     }

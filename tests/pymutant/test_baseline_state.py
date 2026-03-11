@@ -75,14 +75,18 @@ def test_reset_runtime_state_removes_runtime_files(tmp_path: Path) -> None:
     meta = tmp_path / "mutants" / "src" / "a.meta"
     meta.parent.mkdir(parents=True)
     meta.write_text("{}")
+    data = tmp_path / "mutants" / "src" / "cached.data"
+    data.write_text("cached")
     (tmp_path / baseline.STRICT_CAMPAIGN_FILE).write_text("{}")
     (tmp_path / baseline.LEDGER_FILE).write_text("{}")
 
     out = baseline.reset_runtime_state(tmp_path)
     assert out["removed_meta_files"] == 1
+    assert out["removed_mutants_dir"] is True
     assert out["removed_campaign"] is True
     assert out["removed_ledger"] is True
     assert not meta.exists()
+    assert not data.exists()
 
 
 def test_ensure_runtime_baseline_auto_resets_and_writes(monkeypatch, tmp_path: Path) -> None:
@@ -274,16 +278,28 @@ def test_reset_runtime_state_ignores_meta_unlink_error(monkeypatch, tmp_path: Pa
             raise OSError("busy")
         return original_unlink(self, *args, **kwargs)
 
+    monkeypatch.setattr(baseline.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(OSError("busy")))
     monkeypatch.setattr(Path, "unlink", _unlink)
     out = baseline.reset_runtime_state(tmp_path)
     assert out["removed_meta_files"] == 0
+    assert out["removed_mutants_dir"] is False
     assert out["removed_campaign"] is True
     assert out["removed_ledger"] is True
 
 
 def test_reset_runtime_state_when_mutants_dir_missing(tmp_path: Path) -> None:
     out = baseline.reset_runtime_state(tmp_path)
-    assert out == {"removed_meta_files": 0, "removed_campaign": False, "removed_ledger": False}
+    assert out == {"removed_meta_files": 0, "removed_mutants_dir": False, "removed_campaign": False, "removed_ledger": False}
+
+
+def test_reset_runtime_state_fallback_unlinks_meta_when_rmtree_fails(monkeypatch, tmp_path: Path) -> None:
+    meta = tmp_path / "mutants" / "a.meta"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("{}")
+    monkeypatch.setattr(baseline.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(OSError("busy")))
+    out = baseline.reset_runtime_state(tmp_path)
+    assert out["removed_mutants_dir"] is False
+    assert out["removed_meta_files"] == 1
 
 
 def test_ensure_runtime_baseline_returns_valid_status_without_reset(monkeypatch, tmp_path: Path) -> None:

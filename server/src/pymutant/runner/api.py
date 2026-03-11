@@ -13,7 +13,6 @@ from typing import Any
 from pymutant.baseline import ensure_runtime_baseline
 
 from .helpers import (
-    _PENDING_CURSOR_BY_ROOT,
     DEFAULT_BATCH_MAX_CHILDREN,
     _batch_size,
     _dependency_preflight,
@@ -21,6 +20,7 @@ from .helpers import (
     _load_not_checked_mutants,
     _mutmut_cmd_prefix,
     _noop_payload,
+    _normalize_path_selectors,
     _project_root_or_cwd,
     _record_ledger_outcomes,
     _refresh_strict_campaign_names,
@@ -49,8 +49,24 @@ def _build_command(
     changed_paths: list[str] = []
     strict_campaign_state = None
 
+    normalized_paths: list[str] = []
+    ignored_paths: list[str] = []
+
     if paths:
-        cmd.extend(paths)
+        normalized_paths, ignored_paths = _normalize_path_selectors(root, paths)
+        if not normalized_paths:
+            return {
+                "result": {
+                    "returncode": -1,
+                    "stdout": "",
+                    "stderr": (
+                        "No valid selectors matched files under mutation roots. "
+                        f"Ignored selectors: {', '.join(ignored_paths or paths)}"
+                    ),
+                    "summary": "path selectors did not match mutation roots",
+                }
+            }
+        cmd.extend(normalized_paths)
         strict_campaign = False
         changed_only = False
     elif changed_only:
@@ -95,6 +111,8 @@ def _build_command(
         "strict_campaign_state": strict_campaign_state,
         "strict_campaign": strict_campaign,
         "changed_only": changed_only,
+        "normalized_paths": normalized_paths,
+        "ignored_paths": ignored_paths,
     }
 
 
@@ -193,6 +211,8 @@ def _attach_common_result_fields(
     batch_names: list[str],
     changed_only: bool,
     changed_paths: list[str],
+    normalized_paths: list[str],
+    ignored_paths: list[str],
     sanitize: Mapping[str, Any],
     baseline: dict[str, Any],
 ) -> dict[str, Any]:
@@ -215,6 +235,10 @@ def _attach_common_result_fields(
     result["changed_only"] = changed_only
     if changed_only:
         result["changed_paths"] = changed_paths
+    if normalized_paths:
+        result["normalized_paths"] = normalized_paths
+    if ignored_paths:
+        result["ignored_paths"] = ignored_paths
     result["meta_sanitize"] = sanitize
     result["baseline"] = baseline
     return result
@@ -239,6 +263,48 @@ def _normalize_changed_only_selector_miss(
         **_noop_payload("no matching mutants for changed selectors", strict_campaign=False, changed_only=True),
         "changed_paths": changed_paths,
     }
+
+
+def _augment_paths_selector_miss(
+    *,
+    result: dict[str, Any],
+    normalized_paths: list[str],
+) -> dict[str, Any]:
+    stale_filter = "Filtered for specific mutants, but nothing matches"
+    if not normalized_paths:
+        return result
+    if not isinstance(result.get("returncode"), int):
+        return result
+    if result["returncode"] == 0:
+        return result
+    if stale_filter not in str(result.get("stderr", "")):
+        return result
+
+    message = (
+        "path selectors did not match any generated mutants. "
+        "Try pymutant_baseline_refresh to clear stale cache, then rerun with normalized_paths."
+    )
+    err = str(result.get("stderr", "")).strip()
+    result["summary"] = message
+    result["refresh_recommended"] = True
+    result["stderr"] = f"{err}\n{message}".strip()
+    return result
+
+
+def _augment_zero_mutation_hint(
+    *,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    if result.get("returncode") != 0:
+        return result
+    text = f"{result.get('stdout', '')}\n{result.get('stderr', '')}".lower()
+    if "0 files mutated" not in text:
+        return result
+    result["refresh_recommended"] = True
+    if not str(result.get("summary", "")).strip():
+        result["summary"] = "mutmut reported zero mutated files"
+    result["hint"] = "Run pymutant_baseline_refresh to clear stale mutants cache and regenerate selectors."
+    return result
 
 
 def _mark_strict_campaign_attempted(
@@ -297,6 +363,8 @@ def run_mutations(
     pending_names = plan["pending_names"]
     batch_names = plan["batch_names"]
     changed_paths = plan["changed_paths"]
+    normalized_paths = plan["normalized_paths"]
+    ignored_paths = plan["ignored_paths"]
     strict_campaign_state = plan["strict_campaign_state"]
     strict_campaign = plan["strict_campaign"]
     changed_only = plan["changed_only"]
@@ -316,6 +384,7 @@ def run_mutations(
     print(f"Running: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
     result = _run_cmd(cmd, root)
     result = _normalize_changed_only_selector_miss(result=result, changed_only=changed_only, changed_paths=changed_paths)
+    result = _augment_paths_selector_miss(result=result, normalized_paths=normalized_paths)
 
     _mark_strict_campaign_attempted(
         root=root,
@@ -360,6 +429,8 @@ def run_mutations(
             context="explicit_selectors",
         )
 
+    result = _augment_zero_mutation_hint(result=result)
+
     return _attach_common_result_fields(
         root=root,
         result=result,
@@ -369,6 +440,8 @@ def run_mutations(
         batch_names=batch_names,
         changed_only=changed_only,
         changed_paths=changed_paths,
+        normalized_paths=normalized_paths,
+        ignored_paths=ignored_paths,
         sanitize=sanitize,
         baseline=baseline,
     )
@@ -399,7 +472,6 @@ def strict_campaign_status(project_root: Path | None = None) -> dict[str, object
 
 def reset_strict_campaign(project_root: Path | None = None) -> bool:
     root = _project_root_or_cwd(project_root)
-    _PENDING_CURSOR_BY_ROOT.pop(str(root.resolve()), None)
     campaign_path = _strict_campaign_path(root)
     if not campaign_path.exists():
         return False

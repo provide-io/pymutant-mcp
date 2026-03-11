@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -36,15 +37,15 @@ def test_batch_size_env_restore(monkeypatch) -> None:
     monkeypatch.delenv("PYMUTANT_BATCH_SIZE", raising=False)
     prev = benchmark._set_batch_size(11)
     assert prev is None
-    assert benchmark.os.environ["PYMUTANT_BATCH_SIZE"] == "11"
+    assert os.environ["PYMUTANT_BATCH_SIZE"] == "11"
     benchmark._restore_batch_size(prev)
-    assert "PYMUTANT_BATCH_SIZE" not in benchmark.os.environ
+    assert "PYMUTANT_BATCH_SIZE" not in os.environ
 
     monkeypatch.setenv("PYMUTANT_BATCH_SIZE", "9")
     prev2 = benchmark._set_batch_size(12)
     assert prev2 == "9"
     benchmark._restore_batch_size(prev2)
-    assert benchmark.os.environ["PYMUTANT_BATCH_SIZE"] == "9"
+    assert os.environ["PYMUTANT_BATCH_SIZE"] == "9"
 
 
 def test_run_quality_benchmark_pass(monkeypatch, tmp_path: Path) -> None:

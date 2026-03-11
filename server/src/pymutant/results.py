@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess  # nosec B404
+import time
 from pathlib import Path
 from typing import Any, TypeAlias
 
@@ -45,6 +46,23 @@ def _project_root_or_cwd(project_root: Path | None) -> Path:
 
 def _meta_dir(project_root: Path) -> Path:
     return project_root / "mutants"
+
+
+def _load_meta_json(meta_file: Path, retries: int = 3, retry_delay_seconds: float = 0.05) -> dict[str, Any] | None:
+    for attempt in range(retries):
+        try:
+            data = json.loads(meta_file.read_text())
+        except json.JSONDecodeError:
+            if attempt < retries - 1:
+                time.sleep(retry_delay_seconds)
+                continue
+            return None
+        except OSError:
+            return None
+        if isinstance(data, dict):
+            return data
+        return None
+    return None
 
 
 def _strict_campaign_progress(project_root: Path) -> dict[str, object]:
@@ -97,22 +115,26 @@ def load_all_meta_files(project_root: Path | None = None) -> dict[str, dict[str,
     if not meta_dir.exists():
         return results
     for meta_file in meta_dir.rglob("*.meta"):
-        try:
-            data = json.loads(meta_file.read_text())
+        data = _load_meta_json(meta_file)
+        if data is not None:
             results[str(meta_file.relative_to(root))] = data
-        except (json.JSONDecodeError, OSError):
-            pass
     return results
 
 
-def _key_to_source_file(key: str) -> str:
+def _key_to_source_file(key: str, project_root: Path | None = None) -> str:
     """Derive source file path from mutant key like 'src.module.func__mutmut_1'."""
     name_part = key.split("__mutmut_")[0]
-    # Strip trailing function/class name — last segment after last dot is the func
-    # Key is dot-separated module path + function: src.foo.bar.my_func
-    # We want src/foo/bar.py — so we drop the last segment
-    parts = name_part.rsplit(".", 1)
-    module_path = parts[0] if len(parts) > 1 else name_part
+    parts = name_part.split(".")
+
+    if project_root is not None:
+        for idx in range(len(parts), 0, -1):
+            candidate = (project_root / Path(*parts[:idx])).with_suffix(".py")
+            if candidate.is_file():
+                return candidate.relative_to(project_root).as_posix()
+
+    # Fallback for missing/deleted source files.
+    naive_parts = name_part.rsplit(".", 1)
+    module_path = naive_parts[0] if len(naive_parts) > 1 else name_part
     return module_path.replace(".", "/") + ".py"
 
 
@@ -168,7 +190,7 @@ def get_results(
         if not include_killed and status == "killed":
             continue
 
-        source_file = _key_to_source_file(key)
+        source_file = _key_to_source_file(key, root)
         if file_filter and file_filter not in source_file:
             continue
 
