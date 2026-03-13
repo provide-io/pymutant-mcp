@@ -1,30 +1,17 @@
 [project]
-name = "pymutant-dev"
+name = "pymutant"
 dynamic = ["version"]
-description = "Dev tooling for the pymutant plugin"
+description = "MCP server for mutation testing with mutmut"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
-license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+license = "Apache-2.0"
 authors = [{ name = "provide.io llc" }]
 dependencies = [
-    "bandit>=1.8.6",
-    "codespell>=2.4.1",
-    "hypothesis>=6.140.3",
     "mcp[cli]>=1.0.0",
-    "mypy>=1.18.2",
-    "pip-audit>=2.9.0",
-    "pip-licenses>=5.0.0",
-    "pre-commit>=4.3.0",
-    "pymarkdownlnt>=0.9.34",
-    "pytest>=8.4.2",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.13.1",
-    "ty>=0.0.19",
-    "vulture>=2.14",
-    "xenon>=0.9.3",
 ]
 
 [project.scripts]
+pymutant = "pymutant.main:main"
 benchmark = "repo_verify.benchmark:main"
 verify = "repo_verify.cli:main"
 mutation-gate = "repo_verify.mutation_gate:main"
@@ -32,18 +19,14 @@ mutation-sweep = "repo_verify.mutation_gate:main"
 mcp-smoke = "repo_verify.mcp_smoke:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/repo_verify"]
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
-[tool.hatch.version]
-path = "VERSION"
-pattern = "^(?P<version>.+)$"
-
-[tool.uv.workspace]
-members = ["server"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 120
@@ -77,11 +60,11 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=server/src/pymutant --cov=src/repo_verify --cov-branch --cov-report=term-missing --cov-fail-under=100"
+addopts = "--cov=src/pymutant --cov=src/repo_verify --cov-branch --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.run]
 branch = true
-source = ["server/src/pymutant", "src/repo_verify"]
+source = ["src/pymutant", "src/repo_verify"]
 
 [tool.coverage.report]
 fail_under = 100
@@ -96,5 +79,19 @@ pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
 
 [dependency-groups]
 dev = [
+    "bandit>=1.8.6",
+    "codespell>=2.4.1",
+    "hypothesis>=6.140.3",
     "mutmut>=3.5.0",
+    "mypy>=1.18.2",
+    "pip-audit>=2.9.0",
+    "pip-licenses>=5.0.0",
+    "pre-commit>=4.3.0",
+    "pymarkdownlnt>=0.9.34",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.13.1",
+    "ty>=0.0.19",
+    "vulture>=2.14",
+    "xenon>=0.9.3",
 ]

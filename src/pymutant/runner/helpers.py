@@ -28,6 +28,9 @@ MAX_CMD_OUTPUT_CHARS = 32_000
 STRICT_CAMPAIGN_FILE = ".pymutant-strict-campaign.json"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SPINNER_LINE_RE = re.compile(r"^[\s|/\\\-\u2800-\u28ff]+\d+/\d+")
+MUTMUT_PROGRESS_LINE_RE = re.compile(
+    r"^(Generating mutants|Running (?:stats|clean tests|mutation tests|forced fail test|forced fail tests))$"
+)
 RESULT_ICON_STATUS = {
     "🎉": "killed",
     "🙁": "survived",
@@ -401,7 +404,7 @@ def _requires_mcp_dependency(root: Path) -> bool:
             paths = mutmut_cfg.get("paths_to_mutate", [])
             if isinstance(paths, str):
                 paths = [paths]
-            if isinstance(paths, list) and any(str(p).startswith("server/src") for p in paths):
+            if isinstance(paths, list) and any(str(p).startswith("src/pymutant") for p in paths):
                 return True
         except (tomllib.TOMLDecodeError, OSError):
             pass
@@ -468,7 +471,7 @@ def _terminate_process_tree(proc: subprocess.Popen[str], grace_seconds: int = 3)
             proc.kill()
 
 
-def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
+def _run_cmd(cmd: list[str], root: Path, *, compact_progress: bool = True) -> dict[str, object]:
     try:
         with subprocess.Popen(  # noqa: S603  # nosec
             cmd,
@@ -509,7 +512,7 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
 
                     if now - start >= MUTMUT_TIMEOUT:
                         _terminate_process_tree(proc)
-                        out_sanitized = _sanitize_cmd_output(out_seen)
+                        out_sanitized = _sanitize_cmd_output(out_seen, compact_progress=compact_progress)
                         return {
                             "returncode": -1,
                             "stdout": out_sanitized,
@@ -519,7 +522,7 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
 
                     if now - last_output >= MUTMUT_NO_PROGRESS_TIMEOUT:
                         _terminate_process_tree(proc)
-                        out_sanitized = _sanitize_cmd_output(out_seen)
+                        out_sanitized = _sanitize_cmd_output(out_seen, compact_progress=compact_progress)
                         return {
                             "returncode": -1,
                             "stdout": out_sanitized,
@@ -537,8 +540,8 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
                         "summary": "mutmut not found",
                     }
 
-            stdout = _sanitize_cmd_output(stdout)
-            stderr = _sanitize_cmd_output(stderr)
+            stdout = _sanitize_cmd_output(stdout, compact_progress=compact_progress)
+            stderr = _sanitize_cmd_output(stderr, compact_progress=compact_progress)
             combined = stdout + stderr
             return {
                 "returncode": proc.returncode,
@@ -555,7 +558,28 @@ def _run_cmd(cmd: list[str], root: Path) -> dict[str, object]:
         }
 
 
-def _sanitize_cmd_output(output: str) -> str:
+def _compact_progress_lines(lines: list[str]) -> list[str]:
+    compacted: list[str] = []
+    previous_progress_line: str | None = None
+    for line in lines:
+        if not line:
+            if compacted and compacted[-1]:
+                compacted.append(line)
+            continue
+        if MUTMUT_PROGRESS_LINE_RE.match(line):
+            if line == previous_progress_line:
+                continue
+            previous_progress_line = line
+            compacted.append(line)
+            continue
+        previous_progress_line = None
+        compacted.append(line)
+    while compacted and compacted[-1] == "":
+        compacted.pop()
+    return compacted
+
+
+def _sanitize_cmd_output(output: str, *, compact_progress: bool = True) -> str:
     if not output:
         return ""
     text = output.replace("\r\n", "\n").replace("\r", "\n")
@@ -566,6 +590,8 @@ def _sanitize_cmd_output(output: str) -> str:
         if SPINNER_LINE_RE.match(line):
             continue
         cleaned_lines.append(line)
+    if compact_progress:
+        cleaned_lines = _compact_progress_lines(cleaned_lines)
     compact = "\n".join(cleaned_lines).strip()
     if len(compact) <= MAX_CMD_OUTPUT_CHARS:
         return compact

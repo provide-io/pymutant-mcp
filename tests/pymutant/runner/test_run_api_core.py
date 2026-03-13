@@ -149,6 +149,23 @@ def test_run_mutations_loop_continues_until_output(monkeypatch, tmp_path: Path) 
     assert out["returncode"] == 0
     assert "killed" in out["summary"]
 
+
+def test_run_mutations_can_request_raw_output(monkeypatch, tmp_path: Path) -> None:
+    _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
+    seen: dict[str, object] = {}
+
+    def _run_cmd(cmd: list[str], root: Path, *, compact_progress: bool = True) -> dict[str, object]:
+        seen["cmd"] = cmd
+        seen["root"] = root
+        seen["compact_progress"] = compact_progress
+        return {"returncode": 0, "stdout": "ok", "stderr": "", "summary": "ok"}
+
+    _patch_runner_symbol(monkeypatch, "_run_cmd", _run_cmd)
+    out = runner.run_mutations(project_root=tmp_path, include_raw_output=True)
+    assert out["returncode"] == 0
+    assert seen["compact_progress"] is False
+
 def test_run_mutations_batches_pending_not_checked(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
@@ -410,7 +427,7 @@ def test_run_mutations_paths_normalizes_selectors(monkeypatch, tmp_path: Path) -
         return _FakePopen([("done", "")], returncode=0)
 
     monkeypatch.setattr(runner.subprocess, "Popen", _popen)
-    out = runner.run_mutations(paths=["server/src/a.py", "missing.py"], project_root=tmp_path)
+    out = runner.run_mutations(paths=["src/a.py", "missing.py"], project_root=tmp_path)
     assert seen["cmd"] == ["mutmut", "run", "src/a.py"]
     assert out["normalized_paths"] == ["src/a.py"]
     assert out["ignored_paths"] == ["missing.py"]

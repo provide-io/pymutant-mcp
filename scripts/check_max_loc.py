@@ -66,7 +66,7 @@ def main() -> int:
     parser.add_argument(
         "--roots",
         nargs="+",
-        default=["server/src", "src", "tests", "scripts"],
+        default=["src", "tests", "scripts"],
         help="Directories to scan for Python files.",
     )
     parser.add_argument(

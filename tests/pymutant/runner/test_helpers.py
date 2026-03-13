@@ -117,16 +117,17 @@ def test_filter_changed_python_paths_ignores_absolute_paths_outside_root(tmp_pat
     assert out == []
 
 def test_filter_changed_python_paths_resolved_symlink_root(tmp_path: Path) -> None:
-    server_mod = tmp_path / "server" / "src" / "pymutant"
-    server_mod.mkdir(parents=True)
-    target = server_mod / "runner.py"
+    real_mod = tmp_path / "real" / "pymutant"
+    real_mod.mkdir(parents=True)
+    target = real_mod / "runner.py"
     target.write_text("x=1\n")
     src_dir = tmp_path / "src"
     src_dir.mkdir()
-    (src_dir / "pymutant").symlink_to(server_mod)
+    (src_dir / "pymutant").symlink_to(real_mod)
     (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pymutant/"]\n')
 
-    out = runner._filter_changed_python_paths(tmp_path, ["server/src/pymutant/runner.py"])
+    # Pass the resolved (real/) path; should still map to the configured root
+    out = runner._filter_changed_python_paths(tmp_path, ["real/pymutant/runner.py"])
     assert out == ["src/pymutant/runner.py"]
 
 
@@ -523,11 +524,11 @@ def test_strict_remaining_names_filters_stale_even_if_not_attempted(monkeypatch,
     assert runner._strict_remaining_names(tmp_path, campaign) == ["m1"]
 
 def test_requires_mcp_dependency_from_paths(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["server/src/"]\n')
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate=["src/pymutant/"]\n')
     assert runner._requires_mcp_dependency(tmp_path) is True
 
 def test_requires_mcp_dependency_from_string_path(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate="server/src/"\n')
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\npaths_to_mutate="src/pymutant/"\n')
     assert runner._requires_mcp_dependency(tmp_path) is True
 
 def test_requires_mcp_dependency_from_tests(tmp_path: Path) -> None:

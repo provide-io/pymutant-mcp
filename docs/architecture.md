@@ -7,13 +7,13 @@
 
 ## Core Modules
 
-- `server/src/pymutant/runner/api.py`: mutation execution entrypoints, batching orchestration, strict campaign flow.
-- `server/src/pymutant/runner/helpers.py`: subprocess control, changed-only path resolution, strict campaign persistence/helpers.
-- `server/src/pymutant/results.py`: reads mutmut metadata and maps exit codes to statuses.
-- `server/src/pymutant/ledger.py`: append-only per-mutant outcome ledger.
-- `server/src/pymutant/score.py`: mutation score calculation and history handling.
-- `server/src/pymutant/setup.py`: project layout/setup detection and initialization checks.
-- `server/src/pymutant/main.py`: MCP tool registration and root resolution.
+- `src/pymutant/runner/api.py`: mutation execution entrypoints, batching orchestration, strict campaign flow.
+- `src/pymutant/runner/helpers.py`: subprocess control, changed-only path resolution, strict campaign persistence/helpers.
+- `src/pymutant/results.py`: reads mutmut metadata and maps exit codes to statuses.
+- `src/pymutant/ledger.py`: append-only per-mutant outcome ledger.
+- `src/pymutant/score.py`: mutation score calculation and history handling.
+- `src/pymutant/setup.py`: project layout/setup detection and initialization checks.
+- `src/pymutant/main.py`: MCP tool registration and root resolution.
 
 ## Runtime Flow
 

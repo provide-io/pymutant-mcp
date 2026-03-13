@@ -67,6 +67,7 @@ def test_pymutant_run_delegates(monkeypatch, tmp_path: Path) -> None:
         strict_campaign=True,
         changed_only=True,
         base_ref="origin/main",
+        include_raw_output=True,
     )
     assert out["ok"] is True
     assert out["data"]["paths"] == ["x"]
@@ -74,6 +75,7 @@ def test_pymutant_run_delegates(monkeypatch, tmp_path: Path) -> None:
     assert out["data"]["strict_campaign"] is True
     assert out["data"]["changed_only"] is True
     assert out["data"]["base_ref"] == "origin/main"
+    assert out["data"]["include_raw_output"] is True
     assert out["data"]["project_root"] == tmp_path
     assert out["schema_version"] == "1.0"
 

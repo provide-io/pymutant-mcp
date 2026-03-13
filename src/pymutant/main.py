@@ -105,6 +105,7 @@ def pymutant_run(
     strict_campaign: bool = False,
     changed_only: bool = False,
     base_ref: str | None = None,
+    include_raw_output: bool = False,
 ) -> dict[str, Any]:
     """Run mutmut mutation testing on the current project.
 
@@ -114,6 +115,7 @@ def pymutant_run(
         strict_campaign: When True, snapshot pending mutants once and only process that fixed set.
         changed_only: When True, mutate only changed Python files derived from git diff.
         base_ref: Optional git base ref for changed_only diff (default: HEAD).
+        include_raw_output: When True, keep repeated progress lines in stdout/stderr for debugging.
     """
     root = _root()
     result = run_mutations(
@@ -122,6 +124,7 @@ def pymutant_run(
         strict_campaign=strict_campaign,
         changed_only=changed_only,
         base_ref=base_ref,
+        include_raw_output=include_raw_output,
         project_root=root,
     )
     transient, reason = classify_transient_failure(result)

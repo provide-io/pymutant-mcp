@@ -1,9 +1,9 @@
 {
   "allow_over_limit": {
-    "server/src/pymutant/runner.py": 747,
-    "server/src/pymutant/runner/api.py": 507,
-    "server/src/pymutant/runner/helpers.py": 589,
-    "tests/pymutant/runner/test_helpers.py": 623,
+    "src/pymutant/runner.py": 747,
+    "src/pymutant/runner/api.py": 507,
+    "src/pymutant/runner/helpers.py": 615,
+    "tests/pymutant/runner/test_helpers.py": 624,
     "tests/pymutant/test_runner_execution.py": 1145,
     "tests/repo_verify/test_benchmark_cli.py": 716
   }

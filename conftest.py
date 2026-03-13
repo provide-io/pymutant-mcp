@@ -16,11 +16,10 @@ if os.environ.get("MUTANT_UNDER_TEST"):
     _here = Path(__file__).resolve().parent  # mutants/ when run by mutmut
     # Prefer src/ first: it contains mutated copies for both repo_verify and
     # the pymutant symlinked package used for mutation key alignment.
-    for _rel in ("src", "server/src"):
-        _mutated_src = _here / _rel
-        if _mutated_src.exists():
-            # Prepend mutated source roots so mutant copies win over editable installs.
-            sys.path.insert(0, str(_mutated_src))
+    _mutated_src = _here / "src"
+    if _mutated_src.exists():
+        # Prepend mutated source roots so mutant copies win over editable installs.
+        sys.path.insert(0, str(_mutated_src))
 
     # mutmut-generated trampolines import mutmut.__main__.record_trampoline_hit.
     # Importing mutmut.__main__ has process-global side effects (set_start_method),

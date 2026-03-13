@@ -1,6 +1,6 @@
-# pymutant — Claude Code Plugin
+# pymutant — MCP Server for Mutation Testing
 
-A globally-installed Claude Code plugin that makes mutation testing with [mutmut](https://mutmut.readthedocs.io/) a first-class workflow. The plugin bundles a Python server (FastMCP) that exposes structured tools for running mutations, reading results, computing scores, and tracking score history.
+An MCP server (FastMCP, stdio) that makes mutation testing with [mutmut](https://mutmut.readthedocs.io/) a first-class workflow. Exposes structured tools for running mutations, reading results, computing scores, and tracking score history.
 
 ## Prerequisites
 
@@ -25,34 +25,68 @@ A globally-installed Claude Code plugin that makes mutation testing with [mutmut
 
 ## Installation
 
-```bash
-# Option 1: Install via Claude Code plugin system
-claude plugin install ./pymutant
+### Claude Code
 
-# Option 2: Copy directly
-cp -r pymutant ~/.claude/plugins/
+```bash
+claude mcp add pymutant -- uvx pymutant
 ```
 
-After installing, restart Claude Code or reload plugins.
+Or add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "pymutant": {
+      "command": "uvx",
+      "args": ["pymutant"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pymutant": {
+      "command": "uvx",
+      "args": ["pymutant"]
+    }
+  }
+}
+```
+
+### Local development
+
+```bash
+uv run pymutant --project-root .
+```
 
 ## Commands
+
+Commands live in `.claude/commands/` and are discoverable by Claude Code.
 
 ### `/mutation-run [paths] [--no-rerun] [--max-children N]`
 
 Full end-to-end mutation testing workflow:
+
 1. Run `mutmut run` on your project (skip with `--no-rerun` to use existing results)
-2. Compute and display mutation score
-3. Show all surviving mutants with diffs
-4. Write pytest functions to kill each survivor
-5. Save score snapshot to `mutation-score.json`
+1. Compute and display mutation score
+1. Show all surviving mutants with diffs
+1. Write pytest functions to kill each survivor
+1. Save score snapshot to `mutation-score.json`
 
 ### `/mutation-analyze [file_filter]`
 
 Analyze existing results without re-running:
+
 1. Load results from last run
-2. Show score and survivor breakdown
-3. Suggest (but don't write) killing tests
-4. Display score trend if history exists
+1. Show score and survivor breakdown
+1. Suggest (but don't write) killing tests
+1. Display score trend if history exists
 
 ## MCP Tools
 
@@ -92,6 +126,7 @@ All tools return the same response envelope:
 ```
 
 Mutation run/status/score payloads also include a `baseline` block:
+
 - `valid`
 - `reasons`
 - `fingerprint_id`
@@ -124,7 +159,6 @@ After each run, scores are appended to `mutation-score.json` in the project root
 ```mermaid
 flowchart LR
     U["User"] --> C["Claude/Codex"]
-    C --> S["skills/pymutant/SKILL.md"]
     C --> M["pymutant MCP Server"]
     M --> R["runner/api.py + runner/helpers.py (mutmut run)"]
     M --> RS["results.py (mutants/*.meta + ledger)"]
@@ -145,10 +179,12 @@ flowchart TD
 ```
 
 Project root resolution is runtime-only and non-sticky:
+
 - `PYMUTANT_PROJECT_ROOT` (preferred, explicit)
 - process `cwd` (fallback)
 
 You can also set root dynamically at launch:
+
 - `pymutant --project-root /abs/path/to/repo`
 - `pymutant --project-root .` (resolved relative to launch cwd)
 
@@ -158,28 +194,14 @@ You can also set root dynamically at launch:
 - `docs/reporting-artifacts.md`: CI artifacts and the files they contain.
 - `docs/architecture.md`: architecture decisions and mutation run flow.
 
-## Skill Auto-Activation
-
-The skill in `skills/pymutant/SKILL.md` auto-activates when you mention:
-- "mutation test", "mutant", "mutation score"
-- "surviving mutant", "killed mutant"
-- "test quality score", "mutmut"
-- "test coverage gap"
-
 ## Target Project Setup
 
 Add to the project's `pyproject.toml`:
 
 ```toml
 [tool.mutmut]
-paths_to_mutate = ["src/pymutant/", "src/repo_verify/"]
+paths_to_mutate = ["src/mypackage/"]
 tests_dir = ["tests/"]
-```
-
-For this repository, `src/pymutant` is a symlink to `server/src/pymutant` so mutmut keys match runtime module names:
-
-```bash
-ln -s ../server/src/pymutant src/pymutant
 ```
 
 ## Development
@@ -195,10 +217,11 @@ uv run mcp-smoke --project-root . --base-ref HEAD
 uv run pre-commit install
 uv run pre-commit run --all-files
 
-cd server && uv run python -m pymutant --project-root ..   # starts pymutant server on stdio for repo root
+uv run pymutant --project-root .   # starts pymutant server on stdio
 ```
 
 Pre-commit CQ stack includes:
+
 - `detect-secrets` (baseline-backed secret scanning)
 - Ruff lint/format
 - max LOC guard (`scripts/check_max_loc.py`)
@@ -215,6 +238,7 @@ Pre-commit CQ stack includes:
 ### Property/Fuzz Test Profiles
 
 Hypothesis property tests are part of the default suite.
+
 - Local default: `HYPOTHESIS_PROFILE=dev` (`max_examples=200`)
 - CI default: `HYPOTHESIS_PROFILE=ci` (`max_examples=80`)
 
@@ -228,6 +252,7 @@ HYPOTHESIS_PROFILE=dev uv run pytest -q
 ## MCP Batching Behavior
 
 `pymutant_run` now batches by default when prior results exist:
+
 - If `mutants/*.meta` contains `not_checked` mutants, the tool runs only the next batch.
 - Default batch size is `10` mutants per call.
 - Default batch parallelism is `--max-children 2` (unless you pass `max_children`).
@@ -235,6 +260,7 @@ HYPOTHESIS_PROFILE=dev uv run pytest -q
 - When passing explicit `paths`/selectors to `pymutant_run`, use mutant names (for example `pymutant.score.x_compute_score__mutmut_10`), not source file paths.
 
 Calibrated on this repo:
+
 - `batch_size=10`, `max_children=2` is the best balance of throughput and stability.
 - Larger batches and higher concurrency were more likely to trigger flaky/segfault runs.
 - mutmut pytest runs disable cacheprovider (`-p no:cacheprovider`) to avoid cross-platform `WindowsPath` cache crashes.
@@ -242,6 +268,7 @@ Calibrated on this repo:
 ### Changed-Only Mode
 
 Use `pymutant_run(changed_only=true)` to target only changed Python files from git.
+
 - Default diff target is `HEAD` (includes current local changes).
 - Optional `base_ref` (for example `origin/main`) uses `base_ref...HEAD`.
 - Untracked Python files are included when they are under configured `paths_to_mutate`.
@@ -251,6 +278,7 @@ Use `pymutant_run(changed_only=true)` to target only changed Python files from g
 ### Strict Campaign Mode
 
 Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-queued mutants.
+
 - On first call, pymutant snapshots pending mutant IDs to `.pymutant-strict-campaign.json`.
 - Each call processes only the next batch from that fixed snapshot.
 - Progress is deterministic via `campaign_attempted` and `remaining_not_checked`.
@@ -259,6 +287,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 ### Baseline Lifecycle
 
 `pymutant` tracks runtime execution baseline state in `.pymutant-state/baseline.json`.
+
 - Baseline fingerprint captures git head, Python/mutmut versions, resolved mutation/test roots, profile hash, and command mode.
 - On `pymutant_run`, drift is auto-detected and runtime mutation state is reset before continuing.
 - Use `pymutant_baseline_status` to inspect validity and drift reasons.
@@ -267,6 +296,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 ### Outcome Ledger
 
 `pymutant` now writes an append-only mutation ledger at `.pymutant-ledger.json`.
+
 - One event is appended per processed batch/selector run.
 - Per-mutant outcomes are captured from mutmut stdout result lines (with meta fallback).
 - `pymutant_results` and `pymutant_compute_score` use ledger-resolved statuses when available, so prior terminal outcomes remain stable even if mutmut rewrites `.meta` entries later.
@@ -274,6 +304,7 @@ Use `pymutant_run(strict_campaign=true)` when mutmut metadata churn causes re-qu
 ## CI and Local CI
 
 GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
+
 - `verify`: quality + tests + coverage gate
   - emits `bandit-report` artifact (`dist/bandit-report.json`) for audit traceability
   - runs `uv run mcp-smoke --project-root . --base-ref HEAD` to validate MCP root/setup/run path
@@ -296,15 +327,14 @@ GitHub Actions runs `.github/workflows/ci.yml` with these benchmark-gated jobs:
   - accepts interrupted runs only when mutation progress is recorded and budgets are still satisfied
   - validates `dist/benchmark-quality.json` against `schemas/benchmark-quality.schema.json`
   - uploads `benchmark-quality` / `release-benchmark-quality` artifact (`dist/benchmark-quality.json`)
-- `build`: build both root and server distributions, run `twine check`, generate `SHA256SUMS`, and verify checksums
-  - normalizes artifacts to `pymutant*` files only before metadata/checksum validation
-  - uploads release artifact bundle (`release-dist`)
+- `build`: build distribution, run `twine check`, generate `SHA256SUMS`, and verify checksums
 
 Optional in CI: if `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set, the workflow signs `dist/SHA256SUMS` to produce `dist/SHA256SUMS.asc`.
 
 ### Benchmark Baseline
 
 Benchmark thresholds are versioned in `.ci/benchmark-baseline.json` and treated as gates:
+
 - `quality.min_score`: `0.385`
 - `quality.min_checked_mutants`: `10`
 - `quality.max_timeout`: `3`
@@ -319,9 +349,10 @@ For stricter enforcement, lower failure budgets and raise `min_score` incrementa
 ### Release Tag Gate
 
 Tag pushes (`v*`) run `.github/workflows/release-readiness.yml`, which requires:
+
 1. `uv run verify` to pass.
-2. `uv run benchmark quality` to pass against `.ci/benchmark-baseline.json`.
-3. Build + twine + checksum validation with `pymutant*` artifacts only.
+1. `uv run benchmark quality` to pass against `.ci/benchmark-baseline.json`.
+1. Build + twine + checksum validation.
 
 Run the same workflow locally with `act`:
 

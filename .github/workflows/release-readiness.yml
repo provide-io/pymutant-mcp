@@ -89,16 +89,8 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-      - name: Build root package
+      - name: Build package
         run: uv build
-
-      - name: Build server package
-        run: cd server && uv build
-
-      - name: Normalize dist artifacts
-        run: |
-          rm -f dist/pymutant_mcp*
-          ls -1 dist/
 
       - name: Verify distribution metadata
         run: uvx --from twine twine check dist/pymutant*.whl dist/pymutant*.tar.gz

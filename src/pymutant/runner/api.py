@@ -114,8 +114,6 @@ def _build_command(
         "normalized_paths": normalized_paths,
         "ignored_paths": ignored_paths,
     }
-
-
 def _apply_max_children(cmd: list[str], *, batch_names: list[str], max_children: int | None) -> None:
     if max_children is not None:
         cmd.extend(["--max-children", str(max_children)])
@@ -333,6 +331,7 @@ def run_mutations(
     strict_campaign: bool = False,
     changed_only: bool = False,
     base_ref: str | None = None,
+    include_raw_output: bool = False,
     project_root: Path | None = None,
 ) -> dict[str, Any]:
     """Run `mutmut run` and return structured output."""
@@ -382,7 +381,7 @@ def run_mutations(
 
     _apply_max_children(cmd, batch_names=batch_names, max_children=max_children)
     print(f"Running: {' '.join(cmd)} (cwd={root})", file=sys.stderr)
-    result = _run_cmd(cmd, root)
+    result = _run_cmd(cmd, root, compact_progress=not include_raw_output)
     result = _normalize_changed_only_selector_miss(result=result, changed_only=changed_only, changed_paths=changed_paths)
     result = _augment_paths_selector_miss(result=result, normalized_paths=normalized_paths)
 

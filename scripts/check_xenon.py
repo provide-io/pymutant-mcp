@@ -30,7 +30,7 @@ def main() -> int:
     parser.add_argument(
         "--paths",
         nargs="+",
-        default=["server/src/pymutant", "src/repo_verify"],
+        default=["src/pymutant", "src/repo_verify"],
         help="Paths to check.",
     )
     parser.add_argument("--max-absolute", default="C")

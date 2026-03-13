@@ -71,7 +71,7 @@ def main() -> int:
     parser.add_argument(
         "--roots",
         nargs="+",
-        default=["server/src", "src/repo_verify"],
+        default=["src/pymutant", "src/repo_verify"],
         help="Directories to scan for Python files.",
     )
     parser.add_argument(

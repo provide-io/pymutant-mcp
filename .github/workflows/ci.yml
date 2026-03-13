@@ -35,7 +35,7 @@ jobs:
         run: mkdir -p dist
 
       - name: Bandit report
-        run: uv run bandit -r server/src/pymutant src/repo_verify -f json -o dist/bandit-report.json -ll
+        run: uv run bandit -r src/pymutant src/repo_verify -f json -o dist/bandit-report.json -ll
 
       - name: Docs link check (remote)
         run: uv run python scripts/check_markdown_links.py --root . --check-remote --timeout 10 --retries 2
@@ -190,16 +190,8 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-      - name: Build root package
+      - name: Build package
         run: uv build
-
-      - name: Build server package
-        run: cd server && uv build
-
-      - name: Normalize dist artifacts
-        run: |
-          rm -f dist/pymutant_mcp*
-          ls -1 dist/
 
       - name: Verify distribution metadata
         run: uvx --from twine twine check dist/pymutant*.whl dist/pymutant*.tar.gz

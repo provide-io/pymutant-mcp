@@ -8,8 +8,11 @@ __pycache__/
 .coverage
 htmlcov/
 dist/
+build/
+*.egg-info/
 mutants/
 mutation-score.json
 .pymutant-ledger.json
 .pymutant-strict-campaign.json
 .pymutant-state/
+.claude/settings.local.json
