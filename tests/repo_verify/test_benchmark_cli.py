@@ -89,6 +89,7 @@ def test_run_quality_benchmark_pass(monkeypatch, tmp_path: Path) -> None:
     assert metrics["batch_size"] == 7
     assert metrics["interruptions"] == []
     assert metrics["execution"]["status"] == "ok"
+    assert "stdout" not in metrics["last_run"]
 
 
 def test_run_quality_benchmark_recovers_from_interruptions(monkeypatch, tmp_path: Path) -> None:

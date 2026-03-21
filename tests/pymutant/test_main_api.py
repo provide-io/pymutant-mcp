@@ -64,20 +64,39 @@ def test_pymutant_run_delegates(monkeypatch, tmp_path: Path) -> None:
     out = main.pymutant_run(
         paths=["x"],
         max_children=2,
-        strict_campaign=True,
-        changed_only=True,
+        strict_campaign=False,
+        changed_only=False,
         base_ref="origin/main",
         include_raw_output=True,
     )
     assert out["ok"] is True
     assert out["data"]["paths"] == ["x"]
     assert out["data"]["max_children"] == 2
-    assert out["data"]["strict_campaign"] is True
-    assert out["data"]["changed_only"] is True
+    assert out["data"]["strict_campaign"] is False
+    assert out["data"]["changed_only"] is False
     assert out["data"]["base_ref"] == "origin/main"
     assert out["data"]["include_raw_output"] is True
     assert out["data"]["project_root"] == tmp_path
     assert out["schema_version"] == "1.0"
+
+
+def test_pymutant_run_rejects_paths_with_strict_campaign(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "_root", lambda: tmp_path)
+    monkeypatch.setattr(main, "classify_transient_failure", lambda _res: (False, "non_transient"))
+    monkeypatch.setattr(
+        main,
+        "run_mutations",
+        lambda **_kwargs: {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "paths cannot be combined with strict_campaign; use one mode or the other",
+            "summary": "invalid run options",
+        },
+    )
+    out = main.pymutant_run(paths=["x"], strict_campaign=True)
+    assert out["ok"] is False
+    assert out["error"]["type"] == "tool_execution_error"
+    assert "strict_campaign" in out["data"]["stderr"]
 
 
 def test_pymutant_run_failure_quarantine(monkeypatch, tmp_path: Path) -> None:

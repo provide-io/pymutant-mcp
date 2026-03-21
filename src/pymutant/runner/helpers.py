@@ -29,7 +29,10 @@ STRICT_CAMPAIGN_FILE = ".pymutant-strict-campaign.json"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SPINNER_LINE_RE = re.compile(r"^[\s|/\\\-\u2800-\u28ff]+\d+/\d+")
 MUTMUT_PROGRESS_LINE_RE = re.compile(
-    r"^(Generating mutants|Running (?:stats|clean tests|mutation tests|forced fail test|forced fail tests))$"
+    r"^(Generating mutants|Listing all tests|Running (?:stats|clean tests|mutation tests|forced fail test|forced fail tests))$"
+)
+MUTMUT_PROGRESS_PREFIX_RE = re.compile(
+    r"^[\s|/\\\-\u2800-\u28ff]+(?=(Generating mutants|Listing all tests|Running (?:stats|clean tests|mutation tests|forced fail test|forced fail tests))$)"
 )
 RESULT_ICON_STATUS = {
     "🎉": "killed",
@@ -587,6 +590,7 @@ def _sanitize_cmd_output(output: str, *, compact_progress: bool = True) -> str:
     cleaned_lines: list[str] = []
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
+        line = MUTMUT_PROGRESS_PREFIX_RE.sub("", line)
         if SPINNER_LINE_RE.match(line):
             continue
         cleaned_lines.append(line)

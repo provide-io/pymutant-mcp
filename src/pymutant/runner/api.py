@@ -34,6 +34,31 @@ from .helpers import (
 )
 
 
+def _validate_run_options(
+    *,
+    paths: list[str] | None,
+    strict_campaign: bool,
+    changed_only: bool,
+) -> dict[str, Any] | None:
+    if not paths:
+        return None
+    if strict_campaign:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "paths cannot be combined with strict_campaign; use one mode or the other",
+            "summary": "invalid run options",
+        }
+    if changed_only:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "paths cannot be combined with changed_only; use one mode or the other",
+            "summary": "invalid run options",
+        }
+    return None
+
+
 def _build_command(
     *,
     root: Path,
@@ -268,24 +293,64 @@ def _augment_paths_selector_miss(
     result: dict[str, Any],
     normalized_paths: list[str],
 ) -> dict[str, Any]:
-    stale_filter = "Filtered for specific mutants, but nothing matches"
+    if not _is_paths_selector_miss(result=result, normalized_paths=normalized_paths):
+        return result
+
+    message = (
+        "path selectors did not match any generated mutants. "
+        "Refresh the baseline, then rerun with normalized_paths or use explicit mutant keys."
+    )
+    err = str(result.get("stderr", "")).strip()
+    result["summary"] = message
+    result["refresh_recommended"] = True
+    result["stderr"] = f"{err}\n{message}".strip()
+    result["hint"] = "Run pymutant_baseline_refresh, or rerun without file paths and use explicit __mutmut_ selectors."
+    return result
+
+
+def _is_paths_selector_miss(
+    *,
+    result: dict[str, Any],
+    normalized_paths: list[str],
+) -> bool:
+    if not normalized_paths:
+        return False
+    if not isinstance(result.get("returncode"), int):
+        return False
+    if result["returncode"] == 0:
+        return False
+
+    combined = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+    return "Filtered for specific mutants, but nothing matches" in combined
+
+
+def _augment_paths_stats_failure(
+    *,
+    result: dict[str, Any],
+    normalized_paths: list[str],
+) -> dict[str, Any]:
     if not normalized_paths:
         return result
     if not isinstance(result.get("returncode"), int):
         return result
     if result["returncode"] == 0:
         return result
-    if stale_filter not in str(result.get("stderr", "")):
+
+    stdout = str(result.get("stdout", ""))
+    stderr = str(result.get("stderr", ""))
+    combined = f"{stdout}\n{stderr}"
+    if "BadTestExecutionCommandsException" not in combined:
+        return result
+    if "Running stats" not in stdout and "collect_or_load_stats" not in stderr:
         return result
 
     message = (
-        "path selectors did not match any generated mutants. "
-        "Try pymutant_baseline_refresh to clear stale cache, then rerun with normalized_paths."
+        "mutmut failed during internal stats collection for the selected paths. "
+        "This is a mutmut integration failure, not a direct pytest command failure."
     )
-    err = str(result.get("stderr", "")).strip()
     result["summary"] = message
-    result["refresh_recommended"] = True
-    result["stderr"] = f"{err}\n{message}".strip()
+    result["hint"] = "Run the printed pytest command directly to verify tests, then rerun without file paths or use explicit __mutmut_ selectors."
+    result["stats_collection_failed"] = True
     return result
 
 
@@ -336,6 +401,9 @@ def run_mutations(
 ) -> dict[str, Any]:
     """Run `mutmut run` and return structured output."""
     root = _project_root_or_cwd(project_root)
+    invalid_options = _validate_run_options(paths=paths, strict_campaign=strict_campaign, changed_only=changed_only)
+    if invalid_options is not None:
+        return invalid_options
     command_mode = "paths" if paths else "changed_only" if changed_only else "strict_campaign" if strict_campaign else "run"
     baseline = ensure_runtime_baseline(project_root=root, command_mode=command_mode, auto_reset=True)
     sanitize = _sanitize_mutant_meta_files(root)
@@ -384,6 +452,7 @@ def run_mutations(
     result = _run_cmd(cmd, root, compact_progress=not include_raw_output)
     result = _normalize_changed_only_selector_miss(result=result, changed_only=changed_only, changed_paths=changed_paths)
     result = _augment_paths_selector_miss(result=result, normalized_paths=normalized_paths)
+    result = _augment_paths_stats_failure(result=result, normalized_paths=normalized_paths)
 
     _mark_strict_campaign_attempted(
         root=root,

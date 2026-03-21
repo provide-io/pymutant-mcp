@@ -16,3 +16,6 @@ mutation-score.json
 .pymutant-strict-campaign.json
 .pymutant-state/
 .claude/settings.local.json
+
+# Local act CI config (machine-specific)
+.actrc

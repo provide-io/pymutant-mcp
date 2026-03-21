@@ -166,6 +166,7 @@ def test_run_mutations_can_request_raw_output(monkeypatch, tmp_path: Path) -> No
     assert out["returncode"] == 0
     assert seen["compact_progress"] is False
 
+
 def test_run_mutations_batches_pending_not_checked(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
@@ -295,22 +296,6 @@ def test_run_mutations_strict_campaign_no_pending_is_noop(monkeypatch, tmp_path:
     assert out["campaign_attempted"] == 0
     assert out["remaining_not_checked"] == 0
 
-def test_run_mutations_strict_campaign_ignored_with_paths(monkeypatch, tmp_path: Path) -> None:
-    _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
-    _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
-
-    seen: dict[str, list[str]] = {}
-
-    def _popen(cmd, **_kwargs):  # type: ignore[no-untyped-def]
-        seen["cmd"] = cmd
-        return _FakePopen([("done", "")], returncode=0)
-
-    monkeypatch.setattr(runner.subprocess, "Popen", _popen)
-    out = runner.run_mutations(paths=["src/x.py"], strict_campaign=True, changed_only=True, project_root=tmp_path)
-    assert seen["cmd"] == ["mutmut", "run", "src/x.py"]
-    assert out["strict_campaign"] is False
-    assert out["changed_only"] is False
-
 def test_run_mutations_changed_only_detection_error(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
     _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
@@ -410,7 +395,7 @@ def test_run_mutations_paths_mutant_selectors_record_ledger(monkeypatch, tmp_pat
         seen["run_output"] = run_output
 
     _patch_runner_symbol(monkeypatch, "_record_ledger_outcomes", _record)
-    out = runner.run_mutations(paths=["m.a__mutmut_1"], strict_campaign=True, project_root=tmp_path)
+    out = runner.run_mutations(paths=["m.a__mutmut_1"], project_root=tmp_path)
     assert out["returncode"] == 0
     assert seen["names"] == ["m.a__mutmut_1"]
     assert seen["context"] == "explicit_selectors"
@@ -445,6 +430,44 @@ def test_run_mutations_paths_selector_miss_surfaces_clear_hint(monkeypatch, tmp_
     assert out["returncode"] == 1
     assert out["refresh_recommended"] is True
     assert "path selectors did not match any generated mutants" in out["summary"]
+    assert "explicit __mutmut_ selectors" in out["hint"]
+
+
+def test_run_mutations_paths_selector_assertion_in_stdout_is_normalized(monkeypatch, tmp_path: Path) -> None:
+    _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
+    _patch_runner_symbol(monkeypatch, "_normalize_path_selectors", lambda _root, _paths: (["src/a.py"], []))
+    monkeypatch.setattr(
+        runner.subprocess,
+        "Popen",
+        lambda *a, **k: _FakePopen(
+            [("Generating mutants\n0 files mutated, 2 unmodified", "AssertionError: Filtered for specific mutants, but nothing matches")],
+            returncode=1,
+        ),
+    )
+    out = runner.run_mutations(paths=["src/a.py"], project_root=tmp_path)
+    assert out["returncode"] == 1
+    assert out["refresh_recommended"] is True
+    assert "explicit mutant keys" in out["summary"]
+
+
+def test_run_mutations_paths_stats_failure_surfaces_mutmut_specific_hint(monkeypatch, tmp_path: Path) -> None:
+    _patch_runner_symbol(monkeypatch, "_mutmut_cmd_prefix", lambda _root: ["mutmut"])
+    _patch_runner_symbol(monkeypatch, "_dependency_preflight", lambda _root, _cmd: None)
+    _patch_runner_symbol(monkeypatch, "_normalize_path_selectors", lambda _root, _paths: (["src/a.py"], []))
+    monkeypatch.setattr(
+        runner.subprocess,
+        "Popen",
+        lambda *a, **k: _FakePopen(
+            [("Generating mutants\nRunning stats", "BadTestExecutionCommandsException\ncollect_or_load_stats")],
+            returncode=1,
+        ),
+    )
+    out = runner.run_mutations(paths=["src/a.py"], project_root=tmp_path)
+    assert out["returncode"] == 1
+    assert out["stats_collection_failed"] is True
+    assert "internal stats collection" in out["summary"]
+    assert "not a direct pytest command failure" in out["summary"]
 
 def test_run_mutations_paths_with_no_valid_selectors_fails_early(monkeypatch, tmp_path: Path) -> None:
     _patch_runner_symbol(monkeypatch, "_normalize_path_selectors", lambda _root, _paths: ([], ["bad.py"]))
@@ -477,6 +500,26 @@ def test_augment_paths_selector_miss_passthrough_cases() -> None:
         normalized_paths=["src/a.py"],
     )
     assert non_stale["summary"] == "boom"
+
+
+def test_is_paths_selector_miss_false_cases() -> None:
+    assert runner.api._is_paths_selector_miss(result={"returncode": None}, normalized_paths=["src/a.py"]) is False
+    assert runner.api._is_paths_selector_miss(result={"returncode": 0}, normalized_paths=["src/a.py"]) is False
+    assert runner.api._is_paths_selector_miss(result={"returncode": 1, "stderr": "boom"}, normalized_paths=[]) is False
+
+
+def test_augment_paths_stats_failure_passthrough_cases() -> None:
+    non_int = runner.api._augment_paths_stats_failure(
+        result={"returncode": None, "stderr": "BadTestExecutionCommandsException"},
+        normalized_paths=["src/a.py"],
+    )
+    assert non_int["returncode"] is None
+
+    non_stats = runner.api._augment_paths_stats_failure(
+        result={"returncode": 1, "stdout": "Generating mutants", "stderr": "BadTestExecutionCommandsException"},
+        normalized_paths=["src/a.py"],
+    )
+    assert "summary" not in non_stats
 
 def test_augment_zero_mutation_hint_sets_default_summary() -> None:
     out = runner.api._augment_zero_mutation_hint(result={"returncode": 0, "stdout": "0 files mutated, 10 unmodified", "stderr": "", "summary": ""})

@@ -25,6 +25,25 @@ def test_write_json(tmp_path: Path) -> None:
     assert payload["schema_version"] == "1.0"
 
 
+def test_artifact_safe_run_result_suppresses_success_stdout() -> None:
+    compact = mutation_gate._artifact_safe_run_result(
+        {"returncode": 0, "summary": "ok", "stdout": "very noisy progress", "stderr": ""}
+    )
+    assert compact["summary"] == "ok"
+    assert compact["stdout_suppressed"] is True
+    assert "stdout" not in compact
+    assert "stdout_preview" not in compact
+
+
+def test_artifact_safe_run_result_keeps_failure_previews() -> None:
+    compact = mutation_gate._artifact_safe_run_result(
+        {"returncode": 2, "summary": "", "stdout": "x" * 450, "stderr": "bad stderr"}
+    )
+    assert compact["stdout_preview"].startswith("x" * 50)
+    assert "truncated" in compact["stdout_preview"]
+    assert compact["stderr_preview"] == "bad stderr"
+
+
 def test_survivor_names(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         mutation_gate.results,
@@ -71,6 +90,7 @@ def test_run_mutation_gate_success(monkeypatch, tmp_path: Path) -> None:
     assert payload["final_survivors"] == 0
     assert payload["rounds"][0]["survivors_before"] == 2
     assert payload["execution"]["tooling_error"] is False
+    assert payload["seed_run"] == {"returncode": 0, "summary": "ok"}
 
 
 def test_run_mutation_gate_seed_failure(monkeypatch, tmp_path: Path) -> None:

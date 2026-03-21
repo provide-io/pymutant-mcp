@@ -18,8 +18,28 @@ def test_sanitize_cmd_output_compacts_repeated_mutmut_progress() -> None:
     assert sanitized == "Generating mutants\nRunning clean tests\nactual failure context"
 
 
+def test_sanitize_cmd_output_compacts_spinner_prefixed_progress() -> None:
+    raw = (
+        "⠋ Generating mutants\r"
+        "⠙ Generating mutants\r"
+        "⠹ Listing all tests\r"
+        "⠸ Listing all tests\r"
+        "⠹ Running stats\r"
+        "⠸ Running stats\r"
+        "actual failure context\r"
+    )
+    sanitized = runner._sanitize_cmd_output(raw)
+    assert sanitized == "Generating mutants\nListing all tests\nRunning stats\nactual failure context"
+
+
 def test_sanitize_cmd_output_can_preserve_repeated_progress_when_requested() -> None:
     raw = "Generating mutants\rGenerating mutants\ractual failure context\r"
+    sanitized = runner._sanitize_cmd_output(raw, compact_progress=False)
+    assert sanitized == "Generating mutants\nGenerating mutants\nactual failure context"
+
+
+def test_sanitize_cmd_output_preserves_spinner_prefixed_progress_when_requested() -> None:
+    raw = "⠋ Generating mutants\r⠙ Generating mutants\ractual failure context\r"
     sanitized = runner._sanitize_cmd_output(raw, compact_progress=False)
     assert sanitized == "Generating mutants\nGenerating mutants\nactual failure context"
 

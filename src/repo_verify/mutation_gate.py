@@ -13,6 +13,7 @@ from pymutant import results, runner
 from pymutant.schema import with_schema
 
 INTERRUPTION_CODES = {-15, -9}
+ARTIFACT_OUTPUT_CHARS = 400
 
 
 def _chunks(items: list[str], size: int) -> list[list[str]]:
@@ -26,6 +27,84 @@ def _write_json(path: Path | None, payload: dict[str, Any]) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(with_schema(payload), indent=2) + "\n")
+
+
+def _preview_output(text: str, *, limit: int = ARTIFACT_OUTPUT_CHARS) -> str:
+    compact = text.strip()
+    if len(compact) <= limit:
+        return compact
+    omitted = len(compact) - limit
+    return f"{compact[:limit]}\n\n[artifact output truncated: omitted {omitted} characters]"
+
+
+def _artifact_safe_run_result(result: dict[str, Any]) -> dict[str, Any]:
+    artifact = {key: value for key, value in result.items() if key not in {"stdout", "stderr"}}
+    summary = str(result.get("summary", "") or "").strip()
+    stdout = str(result.get("stdout", "") or "")
+    stderr = str(result.get("stderr", "") or "")
+    returncode = int(result.get("returncode", 0))
+
+    if stderr.strip():
+        artifact["stderr_preview"] = _preview_output(stderr)
+    if stdout.strip() and (returncode != 0 or not summary):
+        artifact["stdout_preview"] = _preview_output(stdout)
+    if stdout.strip() and returncode == 0 and summary:
+        artifact["stdout_suppressed"] = True
+    return artifact
+
+
+def _run_seed(
+    *,
+    project_root: Path,
+    changed_only: bool,
+    base_ref: str | None,
+    max_children: int,
+    payload: dict[str, Any],
+    max_interruptions: int,
+) -> tuple[dict[str, Any], int]:
+    interruptions = 0
+    seed = runner.run_mutations(
+        changed_only=changed_only,
+        base_ref=base_ref,
+        max_children=max_children,
+        project_root=project_root,
+    )
+    payload["seed_run"] = _artifact_safe_run_result(seed)
+    while int(seed.get("returncode", 0)) in INTERRUPTION_CODES and interruptions < max_interruptions:
+        payload["seed_cleanup"] = runner.kill_stuck_mutmut(project_root=project_root)
+        interruptions += 1
+        seed = runner.run_mutations(
+            changed_only=changed_only,
+            base_ref=base_ref,
+            max_children=max_children,
+            project_root=project_root,
+        )
+        payload["seed_run"] = _artifact_safe_run_result(seed)
+    return seed, interruptions
+
+
+def _run_batch(
+    *,
+    batch: list[str],
+    max_children: int,
+    project_root: Path,
+    interruptions: int,
+    max_interruptions: int,
+) -> tuple[dict[str, Any], dict[str, Any], int, bool]:
+    out = runner.run_mutations(paths=batch, max_children=max_children, project_root=project_root)
+    batch_info: dict[str, Any] = {
+        "size": len(batch),
+        "returncode": int(out.get("returncode", -1)),
+        "summary": str(out.get("summary", "")),
+    }
+    while int(out.get("returncode", 0)) in INTERRUPTION_CODES and interruptions < max_interruptions:
+        batch_info["cleanup"] = runner.kill_stuck_mutmut(project_root=project_root)
+        interruptions += 1
+        out = runner.run_mutations(paths=batch, max_children=max_children, project_root=project_root)
+        batch_info["returncode"] = int(out.get("returncode", -1))
+        batch_info["summary"] = str(out.get("summary", ""))
+    over_budget = int(out.get("returncode", 0)) in INTERRUPTION_CODES
+    return out, batch_info, interruptions, over_budget
 
 
 def _survivor_names(project_root: Path) -> list[str]:
@@ -63,26 +142,16 @@ def run_mutation_gate(
             "ledger": False,
         }
 
-    seed = runner.run_mutations(
+    failures: list[str] = []
+    tooling_errors: list[str] = []
+    seed, interruptions = _run_seed(
+        project_root=project_root,
         changed_only=changed_only,
         base_ref=base_ref,
         max_children=max_children,
-        project_root=project_root,
+        payload=payload,
+        max_interruptions=max_interruptions,
     )
-    payload["seed_run"] = seed
-
-    failures: list[str] = []
-    tooling_errors: list[str] = []
-    while int(seed.get("returncode", 0)) in INTERRUPTION_CODES and interruptions < max_interruptions:
-        payload["seed_cleanup"] = runner.kill_stuck_mutmut(project_root=project_root)
-        interruptions += 1
-        seed = runner.run_mutations(
-            changed_only=changed_only,
-            base_ref=base_ref,
-            max_children=max_children,
-            project_root=project_root,
-        )
-        payload["seed_run"] = seed
 
     if int(seed.get("returncode", 0)) in INTERRUPTION_CODES:
         tooling_errors.append("seed_run_interrupted_beyond_retry_budget")
@@ -110,19 +179,14 @@ def run_mutation_gate(
         }
 
         for batch in _chunks(names_before, batch_size):
-            out = runner.run_mutations(paths=batch, max_children=max_children, project_root=project_root)
-            batch_info: dict[str, Any] = {
-                "size": len(batch),
-                "returncode": int(out.get("returncode", -1)),
-                "summary": str(out.get("summary", "")),
-            }
-            while int(out.get("returncode", 0)) in INTERRUPTION_CODES and interruptions < max_interruptions:
-                batch_info["cleanup"] = runner.kill_stuck_mutmut(project_root=project_root)
-                interruptions += 1
-                out = runner.run_mutations(paths=batch, max_children=max_children, project_root=project_root)
-                batch_info["returncode"] = int(out.get("returncode", -1))
-                batch_info["summary"] = str(out.get("summary", ""))
-            if int(out.get("returncode", 0)) in INTERRUPTION_CODES:
+            _out, batch_info, interruptions, over_budget = _run_batch(
+                batch=batch,
+                max_children=max_children,
+                project_root=project_root,
+                interruptions=interruptions,
+                max_interruptions=max_interruptions,
+            )
+            if over_budget:
                 tooling_errors.append(f"batch_interruption_beyond_retry_budget:round_{idx}")
             round_data["batches"].append(batch_info)
             if time.monotonic() - start > max_seconds:
