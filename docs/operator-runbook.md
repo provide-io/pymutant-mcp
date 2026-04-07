@@ -65,7 +65,7 @@ The mutation gate also performs this cleanup automatically up to `--max-interrup
 Use Colima socket and run CI locally:
 
 ```bash
-export DOCKER_HOST=unix:///Users/tim/.colima/default/docker.sock #4.
+export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
 act pull_request -W .github/workflows/ci.yml --container-architecture linux/amd64 --container-daemon-socket -
 ```
 

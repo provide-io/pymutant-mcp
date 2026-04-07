@@ -357,7 +357,7 @@ Tag pushes (`v*`) run `.github/workflows/release-readiness.yml`, which requires:
 Run the same workflow locally with `act`:
 
 ```bash
-export DOCKER_HOST=unix:///Users/tim/.colima/default/docker.sock #4.
+export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
 act push -W .github/workflows/ci.yml --container-architecture linux/amd64 --container-daemon-socket -
 ```
 
