@@ -190,9 +190,9 @@ You can also set root dynamically at launch:
 
 ## Docs
 
-- `docs/tool-contracts.md`: MCP tool names, contract, and error payload shape.
-- `docs/reporting-artifacts.md`: CI artifacts and the files they contain.
-- `docs/architecture.md`: architecture decisions and mutation run flow.
+- [`docs/tool-contracts.md`](https://github.com/provide-io/pymutant-mcp/blob/main/docs/tool-contracts.md): MCP tool names, contract, and error payload shape.
+- [`docs/reporting-artifacts.md`](https://github.com/provide-io/pymutant-mcp/blob/main/docs/reporting-artifacts.md): CI artifacts and the files they contain.
+- [`docs/architecture.md`](https://github.com/provide-io/pymutant-mcp/blob/main/docs/architecture.md): architecture decisions and mutation run flow.
 
 ## Target Project Setup
 
@@ -365,4 +365,4 @@ act push -W .github/workflows/ci.yml --container-architecture linux/amd64 --cont
 
 When running under `act` (`ACT=true`), this workflow executes the `verify` job and skips mutation benchmark/build jobs to avoid local QEMU timing variance and PR base-ref fetch issues.
 
-Operator procedures for mutation campaigns, stuck-process recovery, and strict campaign progress are documented in [`docs/operator-runbook.md`](docs/operator-runbook.md).
+Operator procedures for mutation campaigns, stuck-process recovery, and strict campaign progress are documented in [`docs/operator-runbook.md`](https://github.com/provide-io/pymutant-mcp/blob/main/docs/operator-runbook.md).
